@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tovek — decompiled Luau you can actually read</title>
+<meta name="description" content="Tovek is a high-readability, high-performance Luau decompiler. It rebuilds names, methods and structure — turning v1, v2, v3 bytecode soup into source close to the original. A modern fork of medal.">
+<meta name="theme-color" content="#080a0e">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Tovek — decompiled Luau you can actually read">
+<meta property="og:description" content="A high-readability, high-performance Luau decompiler. Real names, recovered methods, reversed -O2 inlining, up to 32× faster. A modern fork of medal.">
+<meta property="og:url" content="https://kiet1308.github.io/Tovek/">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23080a0e'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' text-anchor='middle' fill='%23c2f95a'%3ET%3C/text%3E%3C/svg%3E">
+
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --ink:#080a0e; --ink-2:#0c0f15; --ink-3:#11161f; --ink-4:#19202c;
+    --line:rgba(180,205,235,.10); --line-2:rgba(180,205,235,.18);
+    --text:#e7ebf2; --muted:#8b94a4; --faint:#586273;
+    --acc:#c2f95a; --acc-d:#9ad62f; --acc-soft:rgba(194,249,90,.14);
+    --cy:#5fdde6; --coral:#ff9d6b; --gold:#f5d57a; --rose:#ff8e8e;
+    --r:14px; --r-lg:20px;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --disp:'Bricolage Grotesque',system-ui,sans-serif;
+    --maxw:1180px;
+  }
+  html{scroll-behavior:smooth}
+  body{
+    font-family:var(--disp); color:var(--text); background:var(--ink);
+    line-height:1.6; -webkit-font-smoothing:antialiased; overflow-x:hidden;
+    background-image:
+      radial-gradient(900px 520px at 84% -8%, rgba(194,249,90,.11), transparent 60%),
+      radial-gradient(760px 540px at -6% 14%, rgba(95,221,230,.08), transparent 56%);
+    background-attachment:fixed;
+  }
+  /* faint engineering grid + grain overlays */
+  body::before{
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:54px 54px;
+    -webkit-mask-image:radial-gradient(circle at 50% 0%,#000,transparent 72%);
+            mask-image:radial-gradient(circle at 50% 0%,#000,transparent 72%);
+    opacity:.5;
+  }
+  .grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.045;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+  main,header,footer{position:relative;z-index:2}
+
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--acc);font-weight:500;display:inline-flex;align-items:center;gap:9px}
+  .eyebrow::before{content:"";width:22px;height:1px;background:var(--acc);opacity:.7}
+  h1,h2,h3{font-weight:700;letter-spacing:-.02em;line-height:1.04}
+  .mono{font-family:var(--mono)}
+
+  /* ---------- nav ---------- */
+  .nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);
+    background:rgba(8,10,14,.72);border-bottom:1px solid var(--line)}
+  .nav .wrap{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:700;font-size:19px;letter-spacing:-.02em}
+  .brand .mark{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+    background:linear-gradient(145deg,#1c2330,#0d1118);border:1px solid var(--line-2);
+    font-family:var(--mono);font-weight:700;color:var(--acc);box-shadow:0 0 0 1px rgba(194,249,90,.10) inset}
+  .brand b{color:var(--acc);font-weight:700}
+  .nav-links{display:flex;align-items:center;gap:30px}
+  .nav-links a{font-size:14.5px;color:var(--muted);transition:color .2s}
+  .nav-links a:hover{color:var(--text)}
+  .nav-cta{display:flex;align-items:center;gap:12px}
+
+  .btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--disp);font-weight:600;
+    font-size:14.5px;padding:11px 18px;border-radius:11px;cursor:pointer;border:1px solid transparent;
+    transition:transform .15s,box-shadow .2s,background .2s,border-color .2s;white-space:nowrap}
+  .btn:active{transform:translateY(1px)}
+  .btn-acc{background:var(--acc);color:#0a0d05;box-shadow:0 6px 24px -8px rgba(194,249,90,.6)}
+  .btn-acc:hover{box-shadow:0 10px 34px -8px rgba(194,249,90,.75);transform:translateY(-1px)}
+  .btn-ghost{background:rgba(255,255,255,.03);color:var(--text);border-color:var(--line-2)}
+  .btn-ghost:hover{border-color:var(--acc);background:rgba(194,249,90,.06)}
+  .btn svg{width:16px;height:16px}
+
+  /* ---------- hero ---------- */
+  .hero{padding:74px 0 30px}
+  .hero-grid{display:grid;grid-template-columns:1.02fr .98fr;gap:52px;align-items:center}
+  .hero h1{font-size:clamp(40px,6.2vw,76px);font-weight:800;margin:22px 0 0}
+  .hero h1 .em{color:var(--acc);position:relative;white-space:nowrap}
+  .hero h1 .em::after{content:"";position:absolute;left:0;right:0;bottom:.07em;height:.5em;
+    background:var(--acc-soft);z-index:-1;border-radius:3px}
+  .lede{font-size:clamp(16px,1.7vw,19.5px);color:var(--muted);max-width:33em;margin:24px 0 0}
+  .lede code{font-family:var(--mono);color:var(--coral);font-size:.92em;background:rgba(255,157,107,.10);padding:1px 6px;border-radius:5px}
+  .hero-cta{display:flex;flex-wrap:wrap;gap:14px;margin-top:34px}
+  .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:30px}
+  .chip{font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--muted);
+    border:1px solid var(--line);border-radius:99px;padding:6px 13px;display:inline-flex;gap:7px;align-items:center}
+  .chip .dot{width:6px;height:6px;border-radius:99px;background:var(--acc);box-shadow:0 0 8px var(--acc)}
+
+  /* ---------- code window ---------- */
+  .win{background:linear-gradient(180deg,var(--ink-3),var(--ink-2));border:1px solid var(--line-2);
+    border-radius:var(--r-lg);overflow:hidden;box-shadow:0 40px 80px -40px rgba(0,0,0,.85),0 0 0 1px rgba(255,255,255,.02) inset;position:relative}
+  .win::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:var(--r-lg);
+    box-shadow:0 1px 0 rgba(255,255,255,.05) inset}
+  .win-bar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line);
+    background:rgba(255,255,255,.015)}
+  .dots{display:flex;gap:7px}
+  .dots i{width:11px;height:11px;border-radius:99px;background:#2a313d;display:block}
+  .win-name{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-left:6px}
+  .win-name .ext{color:var(--faint)}
+  .win-tag{margin-left:auto;font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--acc);border:1px solid rgba(194,249,90,.3);border-radius:99px;padding:3px 10px;display:inline-flex;gap:7px;align-items:center}
+  .win-tag .blink{width:6px;height:6px;border-radius:99px;background:var(--acc);box-shadow:0 0 8px var(--acc);animation:blink 1.4s steps(2) infinite}
+  @keyframes blink{50%{opacity:.25}}
+  pre{font-family:var(--mono);font-size:13.5px;line-height:1.62;padding:20px 22px;overflow-x:auto;tab-size:4;color:#d4dae4}
+  pre.sm{font-size:12.7px;padding:16px 18px}
+  /* syntax */
+  .k{color:var(--coral)} .fn{color:var(--acc)} .s{color:var(--cy)} .n{color:var(--gold)}
+  .c{color:var(--faint);font-style:italic} .g{color:#9fc6ff} .p{color:#7b8493}
+  .hl{color:var(--acc);font-weight:500;text-shadow:0 0 14px rgba(194,249,90,.45)}
+  .bad{color:var(--rose);border-bottom:1px dashed rgba(255,142,142,.5)}
+  .cur{display:inline-block;width:8px;height:1.05em;background:var(--acc);vertical-align:-2px;margin-left:2px;animation:blink 1.2s steps(2) infinite}
+
+  /* ---------- transform showcase ---------- */
+  section{padding:64px 0}
+  .sec-head{max-width:none}
+  .sec-head h2{font-size:clamp(28px,3.6vw,44px);margin-top:14px}
+  .sec-head p{color:var(--muted);max-width:46em;margin-top:14px;font-size:16.5px}
+  .xform{display:grid;grid-template-columns:1fr auto 1fr;gap:0;align-items:stretch;margin-top:40px}
+  .xform .win{border-radius:var(--r)}
+  .xform .win.before{border-color:rgba(255,142,142,.18)}
+  .xform .arrow{display:grid;place-items:center;padding:0 18px;color:var(--acc)}
+  .xform .arrow .ring{width:54px;height:54px;border-radius:99px;border:1px solid var(--line-2);
+    display:grid;place-items:center;background:var(--ink-2);box-shadow:0 0 30px -8px rgba(194,249,90,.5)}
+  .xform .arrow svg{width:22px;height:22px}
+  .xform .lab{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin-top:9px;text-align:center}
+
+  /* ---------- stats ---------- */
+  .stats{border-block:1px solid var(--line);background:rgba(255,255,255,.012)}
+  .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+  .stat{padding:14px 26px;border-left:1px solid var(--line)}
+  .stat:first-child{border-left:0}
+  .stat .v{font-size:clamp(34px,4.4vw,52px);font-weight:800;letter-spacing:-.03em;line-height:1;font-family:var(--mono);color:var(--text)}
+  .stat .v .num{color:var(--acc)}
+  .stat .l{color:var(--muted);font-size:13.5px;margin-top:9px}
+
+  /* ---------- features ---------- */
+  .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:42px}
+  .card{background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,.008));
+    border:1px solid var(--line);border-radius:var(--r);padding:24px;position:relative;overflow:hidden;
+    transition:transform .22s,border-color .22s,box-shadow .22s}
+  .card:hover{transform:translateY(-4px);border-color:var(--line-2);box-shadow:0 24px 50px -30px rgba(0,0,0,.9)}
+  .card::before{content:"";position:absolute;inset:0 0 auto 0;height:1px;background:linear-gradient(90deg,transparent,var(--acc),transparent);opacity:0;transition:opacity .25s}
+  .card:hover::before{opacity:.7}
+  .card .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;margin-bottom:16px;
+    background:var(--acc-soft);border:1px solid rgba(194,249,90,.22);color:var(--acc)}
+  .card .ic svg{width:19px;height:19px}
+  .card h3{font-size:18.5px;font-weight:700}
+  .card p{color:var(--muted);font-size:14.5px;margin-top:8px}
+  .card .snip{font-family:var(--mono);font-size:12px;margin-top:15px;padding:11px 13px;border-radius:9px;
+    background:rgba(0,0,0,.35);border:1px solid var(--line);line-height:1.7;overflow-x:auto}
+  .card .snip .from{color:var(--rose)} .card .snip .to{color:var(--acc)} .card .snip .ar{color:var(--faint)}
+
+  /* ---------- demo ---------- */
+  .demo-grid{display:grid;grid-template-columns:.82fr 1.18fr;gap:38px;align-items:center;margin-top:36px}
+  .demo-note{display:flex;flex-direction:column;gap:18px}
+  .demo-note .row{display:flex;gap:13px;align-items:flex-start}
+  .demo-note .row .b{width:26px;height:26px;flex:0 0 auto;border-radius:7px;display:grid;place-items:center;
+    background:var(--acc-soft);border:1px solid rgba(194,249,90,.22);color:var(--acc);font-family:var(--mono);font-size:12px;font-weight:700}
+  .demo-note .row p{color:var(--muted);font-size:14.5px}
+  .demo-note .row b{color:var(--text);font-weight:600}
+
+  /* ---------- compare ---------- */
+  .tablewrap{margin-top:38px;border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:560px}
+  th,td{text-align:left;padding:16px 22px;border-bottom:1px solid var(--line);font-size:14.8px;vertical-align:top}
+  thead th{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);background:rgba(255,255,255,.02)}
+  thead th.tk{color:var(--acc)}
+  tbody tr:last-child td{border-bottom:0}
+  td:first-child{color:var(--muted);width:30%}
+  td.medal{color:var(--faint)}
+  td.tk{color:var(--text);background:rgba(194,249,90,.045);border-left:1px solid rgba(194,249,90,.18)}
+  td.tk code,td.medal code{font-family:var(--mono);font-size:.86em;color:inherit}
+  th.tk{background:rgba(194,249,90,.06);border-left:1px solid rgba(194,249,90,.18)}
+
+  /* ---------- get started ---------- */
+  .start-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:40px}
+  .term{background:var(--ink-2);border:1px solid var(--line-2);border-radius:var(--r);overflow:hidden}
+  .term .win-bar{background:rgba(255,255,255,.02)}
+  .cmd{display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:13px}
+  .cmd:last-child{border-bottom:0}
+  .cmd .pr{color:var(--acc)} .cmd .t{color:#cdd4df;flex:1;overflow-x:auto;white-space:nowrap}
+  .cmd .t .cc{color:var(--faint)}
+  .cmd .cp{flex:0 0 auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);
+    background:transparent;border-radius:7px;padding:5px 9px;cursor:pointer;transition:.2s}
+  .cmd .cp:hover{border-color:var(--acc);color:var(--acc)}
+  .dlbox{background:linear-gradient(165deg,rgba(194,249,90,.07),rgba(255,255,255,.01));border:1px solid var(--line-2);
+    border-radius:var(--r);padding:26px;display:flex;flex-direction:column;gap:14px}
+  .dlbox h3{font-size:20px}
+  .dlbox p{color:var(--muted);font-size:14px}
+  .dl-links{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+  .dl{display:flex;align-items:center;gap:13px;padding:13px 15px;border:1px solid var(--line);border-radius:11px;
+    background:rgba(0,0,0,.25);transition:.2s}
+  .dl:hover{border-color:var(--acc);background:rgba(194,249,90,.05)}
+  .dl .ic{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:var(--ink-4);color:var(--acc);flex:0 0 auto}
+  .dl .ic svg{width:17px;height:17px}
+  .dl .meta{display:flex;flex-direction:column;line-height:1.3}
+  .dl .meta b{font-size:14.5px;font-family:var(--mono)}
+  .dl .meta span{font-size:12px;color:var(--muted)}
+  .dl .sz{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--faint)}
+  .build-note{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-top:16px;
+    padding:13px 16px;border:1px dashed var(--line-2);border-radius:10px}
+  .build-note code{color:var(--cy)}
+
+  /* ---------- credits ---------- */
+  .credits{text-align:center}
+  .credits .box{max-width:640px;margin:30px auto 0;border:1px solid var(--line);border-radius:var(--r-lg);
+    padding:40px 32px;background:rgba(255,255,255,.012)}
+  .credits .names{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;margin-top:22px}
+  .credits .who{font-family:var(--mono);font-size:14px;color:var(--text);border:1px solid var(--line-2);border-radius:99px;padding:9px 18px}
+  .credits .who span{color:var(--muted)}
+  .credits p{color:var(--muted)}
+
+  /* ---------- footer ---------- */
+  footer{border-top:1px solid var(--line);padding:44px 0;margin-top:30px}
+  .foot{display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap}
+  .foot .l{color:var(--faint);font-size:13.5px}
+  .foot .links{display:flex;gap:24px;flex-wrap:wrap}
+  .foot .links a{color:var(--muted);font-size:14px;transition:.2s}
+  .foot .links a:hover{color:var(--acc)}
+
+  /* ---------- reveal ---------- */
+  .reveal{opacity:0;transform:translateY(18px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1);transition-delay:var(--d,0ms)}
+  .reveal.in{opacity:1;transform:none}
+
+  /* ---------- responsive ---------- */
+  @media(max-width:920px){
+    .hero-grid{grid-template-columns:1fr;gap:36px}
+    .feat-grid{grid-template-columns:repeat(2,1fr)}
+    .demo-grid{grid-template-columns:1fr}
+    .start-grid{grid-template-columns:1fr}
+    .stat-grid{grid-template-columns:repeat(2,1fr)}
+    .stat{border-top:1px solid var(--line)}
+    .stat:nth-child(-n+2){border-top:0}
+    .stat:nth-child(odd){border-left:0}
+    .xform{grid-template-columns:1fr}
+    .xform .arrow{padding:16px 0}
+    .xform .arrow .ring{transform:rotate(90deg)}
+  }
+  @media(max-width:680px){
+    .nav-links{display:none}
+    .feat-grid{grid-template-columns:1fr}
+    .hero{padding:48px 0 16px}
+  }
+  @media(prefers-reduced-motion:reduce){
+    *{animation:none!important}
+    .reveal{opacity:1;transform:none;transition:none}
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+<div class="grain"></div>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><span class="mark">T</span> tov<b>ek</b></a>
+    <nav class="nav-links">
+      <a href="#transform">Transform</a>
+      <a href="#features">Features</a>
+      <a href="#demo">Demo</a>
+      <a href="#compare">vs medal</a>
+      <a href="#start">Get started</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-ghost" href="https://github.com/Kiet1308/Tovek" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5Z"/></svg>
+        GitHub
+      </a>
+      <a class="btn btn-acc" href="https://github.com/Kiet1308/Tovek/releases/latest" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg>
+        Download
+      </a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <span class="eyebrow reveal">A Luau decompiler · beta 0.1</span>
+        <h1 class="reveal" style="--d:60ms">Decompiled Luau<br>you can <span class="em">actually read.</span></h1>
+        <p class="lede reveal" style="--d:140ms">Tovek rebuilds names, methods and control flow — turning <code>v1, v2, v3</code> bytecode soup into source close to what a human wrote. And it does it up to <b style="color:var(--text)">32× faster</b> than before. A modern fork of <b style="color:var(--text)">medal</b>.</p>
+        <div class="hero-cta reveal" style="--d:220ms">
+          <a class="btn btn-acc" href="https://github.com/Kiet1308/Tovek/releases/latest" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg>
+            Download for Windows
+          </a>
+          <a class="btn btn-ghost" href="#transform">See the difference →</a>
+        </div>
+        <div class="chips reveal" style="--d:300ms">
+          <span class="chip"><span class="dot"></span>beta 0.1</span>
+          <span class="chip">MIT licensed</span>
+          <span class="chip">fork of medal</span>
+          <span class="chip">262/262 valid output</span>
+        </div>
+      </div>
+
+      <div class="win reveal" style="--d:240ms">
+        <div class="win-bar">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="win-name">AfkClient.client<span class="ext">.luau</span></span>
+          <span class="win-tag"><span class="blink"></span>decoded</span>
+        </div>
+<pre><span class="k">local</span> <span class="hl">Players</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">)</span>
+<span class="k">local</span> <span class="hl">ReplicatedStorage</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">)</span>
+<span class="k">local</span> <span class="hl">afkConfig</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="hl">ReplicatedStorage</span><span class="p">.</span>Shared<span class="p">.</span>Data<span class="p">.</span>AfkConfig<span class="p">)</span>
+
+<span class="k">local function</span> <span class="fn hl">isAfkEnabled</span><span class="p">()</span>
+	<span class="k">local</span> <span class="hl">placeId</span> <span class="p">=</span> <span class="fn">tonumber</span><span class="p">(</span><span class="hl">afkConfig</span><span class="p">.</span>PlaceId<span class="p">)</span>
+	<span class="k">if</span> <span class="hl">afkConfig</span><span class="p">.</span>Enabled <span class="p">==</span> <span class="k">false</span> <span class="k">then</span>
+		<span class="k">return</span> <span class="k">false</span>
+	<span class="k">end</span>
+	<span class="k">if</span> <span class="hl">placeId</span> <span class="k">and</span> <span class="hl">placeId</span> <span class="p">&gt;</span> <span class="n">0</span> <span class="k">then</span>
+		<span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="hl">placeId</span>
+	<span class="k">else</span>
+		<span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="n">0</span>
+	<span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">local</span> <span class="hl">localPlayer</span> <span class="p">=</span> <span class="hl">Players</span><span class="p">.</span>LocalPlayer
+<span class="k">repeat</span> <span class="g">task</span><span class="p">.</span><span class="fn">wait</span><span class="p">()</span> <span class="k">until</span> <span class="hl">localPlayer</span><span class="p">:</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"DataLoaded"</span><span class="p">)</span><span class="cur"></span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <section class="stats" style="padding:0">
+    <div class="wrap">
+      <div class="stat-grid">
+        <div class="stat reveal"><div class="v"><span class="num" data-to="2">0</span>×</div><div class="l">faster on a single file</div></div>
+        <div class="stat reveal" style="--d:80ms"><div class="v"><span class="num" data-to="32">0</span>×</div><div class="l">faster across a corpus</div></div>
+        <div class="stat reveal" style="--d:160ms"><div class="v"><span class="num" data-to="262">0</span>/262</div><div class="l">outputs re-parse in Luau</div></div>
+        <div class="stat reveal" style="--d:240ms"><div class="v"><span class="num" data-to="100">0</span>%</div><div class="l">deterministic · byte-identical</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRANSFORM -->
+  <section id="transform">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">// the difference</span>
+        <h2>From bytecode soup to source you can read.</h2>
+        <p>Most decompilers stop at <em>correct</em>. Tovek keeps going — recovering the names, services and idioms the Luau compiler stripped away, so the output reads like the original.</p>
+      </div>
+
+      <div class="xform">
+        <div>
+          <div class="win before reveal">
+            <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-name">raw decompile<span class="ext">.luau</span></span></div>
+<pre class="sm"><span class="k">local</span> <span class="bad">v1</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">)</span>
+<span class="k">local function</span> <span class="bad">u1</span><span class="p">()</span>
+    <span class="k">local</span> <span class="bad">v2</span> <span class="p">=</span> <span class="fn">tonumber</span><span class="p">(</span><span class="bad">v1</span><span class="p">.</span>Shared<span class="p">.</span>Data<span class="p">.</span>AfkConfig<span class="p">.</span>PlaceId<span class="p">)</span>
+    <span class="k">if</span> <span class="bad">v1</span><span class="p">.</span>Shared<span class="p">.</span>Data<span class="p">.</span>AfkConfig<span class="p">.</span>Enabled <span class="p">==</span> <span class="k">false</span> <span class="k">then</span>
+        <span class="k">return</span> <span class="k">false</span>
+    <span class="k">end</span>
+    <span class="k">if</span> <span class="bad">v2</span> <span class="k">and</span> <span class="bad">v2</span> <span class="p">&gt;</span> <span class="n">0</span> <span class="k">then</span>
+        <span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="bad">v2</span>
+    <span class="k">end</span>
+    <span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="n">0</span>
+<span class="k">end</span>
+<span class="k">if</span> <span class="k">not</span> <span class="bad">u1</span><span class="p">()</span> <span class="k">then</span> <span class="k">return</span> <span class="k">end</span>
+<span class="k">local</span> <span class="bad">v3</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">)</span><span class="p">.</span>LocalPlayer
+<span class="k">repeat</span> <span class="g">task</span><span class="p">.</span><span class="fn">wait</span><span class="p">()</span> <span class="k">until</span> <span class="bad">v3</span><span class="p">:</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"DataLoaded"</span><span class="p">)</span></pre>
+          </div>
+          <div class="lab">v1 · v2 · u1 · inlined services · repeated chains</div>
+        </div>
+
+        <div class="arrow reveal" style="--d:120ms">
+          <div class="ring">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m0 0-6-6m6 6-6 6"/></svg>
+          </div>
+        </div>
+
+        <div>
+          <div class="win reveal" style="--d:160ms">
+            <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-name">tovek<span class="ext">.luau</span></span><span class="win-tag"><span class="blink"></span>tovek</span></div>
+<pre class="sm"><span class="k">local</span> <span class="hl">Players</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">)</span>
+<span class="k">local</span> <span class="hl">ReplicatedStorage</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">)</span>
+<span class="k">local</span> <span class="hl">afkConfig</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="hl">ReplicatedStorage</span><span class="p">.</span>Shared<span class="p">.</span>Data<span class="p">.</span>AfkConfig<span class="p">)</span>
+<span class="k">local function</span> <span class="fn hl">isAfkEnabled</span><span class="p">()</span>
+    <span class="k">local</span> <span class="hl">placeId</span> <span class="p">=</span> <span class="fn">tonumber</span><span class="p">(</span><span class="hl">afkConfig</span><span class="p">.</span>PlaceId<span class="p">)</span>
+    <span class="k">if</span> <span class="hl">afkConfig</span><span class="p">.</span>Enabled <span class="p">==</span> <span class="k">false</span> <span class="k">then</span> <span class="k">return</span> <span class="k">false</span> <span class="k">end</span>
+    <span class="k">if</span> <span class="hl">placeId</span> <span class="k">and</span> <span class="hl">placeId</span> <span class="p">&gt;</span> <span class="n">0</span> <span class="k">then</span>
+        <span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="hl">placeId</span>
+    <span class="k">else</span>
+        <span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="n">0</span>
+    <span class="k">end</span>
+<span class="k">end</span>
+<span class="k">local</span> <span class="hl">localPlayer</span> <span class="p">=</span> <span class="hl">Players</span><span class="p">.</span>LocalPlayer
+<span class="k">repeat</span> <span class="g">task</span><span class="p">.</span><span class="fn">wait</span><span class="p">()</span> <span class="k">until</span> <span class="hl">localPlayer</span><span class="p">:</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"DataLoaded"</span><span class="p">)</span></pre>
+          </div>
+          <div class="lab" style="color:var(--acc)">named locals · preserved handles · structured flow</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">// what makes it different</span>
+        <h2>Engineered for readability.</h2>
+        <p>A pipeline of analysis passes that the upstream decompiler never had — each one undoing another layer of what the compiler did to your code.</p>
+      </div>
+
+      <div class="feat-grid">
+        <div class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg></div>
+          <h3>Real variable names</h3>
+          <p>Locals and parameters are inferred from how they're used — never a wall of <code class="mono" style="color:var(--rose)">v1, v2, v3</code>.</p>
+          <div class="snip"><span class="from">v7</span><span class="ar">:Connect(…)</span> <span class="ar">→</span> <span class="to">connection</span><span class="ar">:Connect(…)</span></div>
+        </div>
+
+        <div class="card reveal" style="--d:70ms">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div>
+          <h3>Handles preserved</h3>
+          <p><code>GetService</code> and <code>require</code> stay as one named header local instead of being inlined at every call site.</p>
+          <div class="snip"><span class="from">game:GetService("Players")</span> <span class="ar">×N → declared</span> <span class="to">once</span></div>
+        </div>
+
+        <div class="card reveal" style="--d:140ms">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/></svg></div>
+          <h3>OOP method recovery</h3>
+          <p>Methods written with an explicit <code>self</code> are rendered back with colon-call syntax.</p>
+          <div class="snip"><span class="from">function T.f(self, x)</span> <span class="ar">→</span> <span class="to">function T:f(x)</span></div>
+        </div>
+
+        <div class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.4 2.6L3 8"/><path d="M3 4v4h4"/></svg></div>
+          <h3>Reverses the -O2 optimizer</h3>
+          <p>Single-use temporaries, inlined expressions and exploded table literals are reassembled — with the original inline points left as comments.</p>
+        </div>
+
+        <div class="card reveal" style="--d:70ms">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 8-4 4 4 4M17 8l4 4-4 4M14 4l-4 16"/></svg></div>
+          <h3>Idiomatic syntax</h3>
+          <p>Compound assignments, backtick interpolation, normalized conditions and far fewer redundant parentheses.</p>
+          <div class="snip"><span class="from">x = x + 1</span> <span class="ar">→</span> <span class="to">x += 1</span></div>
+        </div>
+
+        <div class="card reveal" style="--d:140ms">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></div>
+          <h3>Deterministic &amp; validated</h3>
+          <p>Byte-identical output regardless of thread count, and the full corpus re-parses cleanly under Luau's own front end.</p>
+        </div>
+
+        <div class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6l2 2h8v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg></div>
+          <h3>Batch tooling</h3>
+          <p><code>decompile-folder</code> and <code>validate-folder</code> chew through an entire SynSaveInstance dump in parallel.</p>
+        </div>
+
+        <div class="card reveal" style="--d:70ms">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 9 8m10 8.5L15 12m-2-6-2 12"/><rect x="2" y="9" width="6" height="6" rx="1"/></svg></div>
+          <h3>Run it anywhere</h3>
+          <p>Standalone CLI, a tiny HTTP server for the executor workflow, or a Cloudflare Worker for serverless deploys.</p>
+        </div>
+
+        <div class="card reveal" style="--d:140ms">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg></div>
+          <h3>mimalloc fast path</h3>
+          <p>The decompiler is allocation-bound; a per-thread allocator plus parallel per-function lifting deliver the speedups.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEMO -->
+  <section id="demo">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">// real output</span>
+        <h2>This is unedited Tovek output.</h2>
+      </div>
+      <div class="demo-grid">
+        <div class="demo-note">
+          <div class="row reveal"><span class="b">1</span><p><b>Services up top.</b> The dependency surface of the script is obvious at a glance.</p></div>
+          <div class="row reveal" style="--d:80ms"><span class="b">2</span><p><b>Honest comments.</b> Where the compiler inlined a definition, Tovek reconstructs it and marks the seam — nothing is silently invented.</p></div>
+          <div class="row reveal" style="--d:160ms"><span class="b">3</span><p><b>Readable names everywhere.</b> <code>placeId</code>, <code>afkConfig</code>, <code>localPlayer</code> — inferred from usage, not numbered.</p></div>
+          <div class="row reveal" style="--d:240ms"><span class="b">4</span><p><b>Structured control flow.</b> Guards, loops and conditionals recovered into the shape they were written in.</p></div>
+        </div>
+        <div class="win reveal" style="--d:120ms">
+          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-name">AfkClient.client<span class="ext">.luau</span></span><span class="win-tag"><span class="blink"></span>tovek</span></div>
+<pre><span class="k">local</span> <span class="hl">Players</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">)</span>
+<span class="k">local</span> <span class="hl">ReplicatedStorage</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">)</span>
+<span class="k">local</span> <span class="hl">afkConfig</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="hl">ReplicatedStorage</span><span class="p">.</span>Shared<span class="p">.</span>Data<span class="p">.</span>AfkConfig<span class="p">)</span>
+<span class="c">--  [-O2 INLINED, UNHOOKABLE] reconstructed definition;</span>
+<span class="k">local function</span> <span class="fn">isAfkEnabled</span><span class="p">()</span>
+	<span class="k">local</span> <span class="hl">placeId</span> <span class="p">=</span> <span class="fn">tonumber</span><span class="p">(</span><span class="hl">afkConfig</span><span class="p">.</span>PlaceId<span class="p">)</span>
+	<span class="k">if</span> <span class="hl">afkConfig</span><span class="p">.</span>Enabled <span class="p">==</span> <span class="k">false</span> <span class="k">then</span>
+		<span class="k">return</span> <span class="k">false</span>
+	<span class="k">end</span>
+	<span class="k">if</span> <span class="hl">placeId</span> <span class="k">and</span> <span class="hl">placeId</span> <span class="p">&gt;</span> <span class="n">0</span> <span class="k">then</span>
+		<span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="hl">placeId</span>
+	<span class="k">else</span>
+		<span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="n">0</span>
+	<span class="k">end</span>
+<span class="k">end</span>
+<span class="c">--  [-O2 INLINED, UNHOOKABLE] reconstructed call</span>
+<span class="k">if</span> <span class="k">not</span> <span class="fn">isAfkEnabled</span><span class="p">()</span> <span class="k">then</span>
+	<span class="k">return</span>
+<span class="k">end</span>
+
+<span class="k">local</span> <span class="hl">localPlayer</span> <span class="p">=</span> <span class="hl">Players</span><span class="p">.</span>LocalPlayer
+
+<span class="k">repeat</span>
+	<span class="g">task</span><span class="p">.</span><span class="fn">wait</span><span class="p">()</span>
+<span class="k">until</span> <span class="hl">localPlayer</span><span class="p">:</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"DataLoaded"</span><span class="p">)</span></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARE -->
+  <section id="compare">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">// tovek vs upstream medal</span>
+        <h2>Same correctness. Far better output.</h2>
+      </div>
+      <div class="tablewrap reveal">
+        <table>
+          <thead><tr><th></th><th>medal</th><th class="tk">Tovek</th></tr></thead>
+          <tbody>
+            <tr><td>Local &amp; parameter names</td><td class="medal"><code>v1, v2, v3 …</code></td><td class="tk">Inferred — <code>player, connection, track, color …</code></td></tr>
+            <tr><td>Service / module handles</td><td class="medal">inlined at every call site</td><td class="tk">preserved once as a named header local</td></tr>
+            <tr><td>OOP methods</td><td class="medal"><code>function T.m(self, …)</code></td><td class="tk"><code>function T:m(…)</code> with real <code>self</code></td></tr>
+            <tr><td>Luau <code>-O2</code> inlining</td><td class="medal">left inlined</td><td class="tk">de-inlined &amp; reassembled</td></tr>
+            <tr><td>Compound assignment</td><td class="medal"><code>x = x + 1</code></td><td class="tk"><code>x += 1</code> (incl. indexed)</td></tr>
+            <tr><td>Strings</td><td class="medal"><code>string.format("%*", …)</code></td><td class="tk">backtick interpolation</td></tr>
+            <tr><td>Speed</td><td class="medal">baseline</td><td class="tk">~2× single file · up to 32× on a corpus</td></tr>
+            <tr><td>Determinism</td><td class="medal">thread-order dependent</td><td class="tk">byte-identical, reproducible</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- GET STARTED -->
+  <section id="start">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">// get started</span>
+        <h2>Download a binary, or build it yourself.</h2>
+      </div>
+      <div class="start-grid">
+        <div class="dlbox reveal">
+          <h3>Prebuilt binaries</h3>
+          <p>Windows x64. No install — just run. Server build is for the executor → HTTP workflow.</p>
+          <div class="dl-links">
+            <a class="dl" href="https://github.com/Kiet1308/Tovek/releases/download/v0.1.0-beta/luau-lifter.exe">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2M7 11l5 5 5-5M12 4v12"/></svg></span>
+              <span class="meta"><b>luau-lifter.exe</b><span>Standalone CLI decompiler</span></span>
+              <span class="sz">~3.4 MB</span>
+            </a>
+            <a class="dl" href="https://github.com/Kiet1308/Tovek/releases/download/v0.1.0-beta/web-server.exe">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><path d="M7 7h.01M7 17h.01"/></svg></span>
+              <span class="meta"><b>web-server.exe</b><span>HTTP decompiler server</span></span>
+              <span class="sz">~3.5 MB</span>
+            </a>
+          </div>
+          <a class="btn btn-ghost" style="margin-top:6px;justify-content:center" href="https://github.com/Kiet1308/Tovek/releases/latest" target="_blank" rel="noopener">All releases →</a>
+        </div>
+
+        <div class="term reveal" style="--d:90ms">
+          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-name">terminal</span></div>
+          <div class="cmd"><span class="pr">$</span><span class="t">luau-lifter script.luac</span><button class="cp" data-copy="luau-lifter script.luac">copy</button></div>
+          <div class="cmd"><span class="pr">$</span><span class="t">luau-lifter decompile-folder <span class="cc">./dump ./out</span></span><button class="cp" data-copy="luau-lifter decompile-folder ./dump ./out">copy</button></div>
+          <div class="cmd"><span class="pr">$</span><span class="t">luau-lifter validate-folder <span class="cc">./dump ./out</span></span><button class="cp" data-copy="luau-lifter validate-folder ./dump ./out">copy</button></div>
+          <div class="cmd"><span class="pr">$</span><span class="t"><span class="cc"># run the HTTP server on :3000</span></span></div>
+          <div class="cmd"><span class="pr">&gt;</span><span class="t">.\run-server.ps1</span><button class="cp" data-copy=".\run-server.ps1">copy</button></div>
+          <div class="build-note">Build from source — pinned nightly toolchain:<br>
+            <code>cargo +nightly-2024-12-15 build --release -p web-server -p luau-lifter</code></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CREDITS -->
+  <section class="credits">
+    <div class="wrap">
+      <span class="eyebrow reveal" style="justify-content:center;display:flex">// in memory</span>
+      <div class="box reveal">
+        <h2 style="font-size:26px">Built on the work of medal.</h2>
+        <p style="margin-top:14px">Tovek is a fork of the <a href="https://github.com/Stefanuk12/medal-decompiler" style="color:var(--acc)" target="_blank" rel="noopener">medal</a> decompiler. All credit for the foundation goes, in honour and memory, to:</p>
+        <div class="names">
+          <span class="who">Jujhar Singh <span>· KowalskiFX</span></span>
+          <span class="who">Mathias Pedersen <span>· Costomality</span></span>
+        </div>
+        <p style="margin-top:22px;font-size:14.5px">Keep the Singh and Pedersen families in your prayers. We love you both.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <div class="l">© <span id="yr">2026</span> Tovek · beta 0.1 · MIT licensed · a fork of medal</div>
+    <div class="links">
+      <a href="https://github.com/Kiet1308/Tovek" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/Kiet1308/Tovek/releases/latest" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/Kiet1308/Tovek/blob/main/LICENSE.txt" target="_blank" rel="noopener">License</a>
+      <a href="https://github.com/Stefanuk12/medal-decompiler" target="_blank" rel="noopener">Upstream</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // scroll reveals
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, {threshold:.14, rootMargin:'0px 0px -40px 0px'});
+  document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
+
+  // count-up stats
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cio = new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ countUp(e.target); cio.unobserve(e.target); } });
+  }, {threshold:.6});
+  document.querySelectorAll('.num[data-to]').forEach(function(el){ cio.observe(el); });
+  function countUp(el){
+    var to = +el.dataset.to;
+    if(reduce){ el.textContent = to; return; }
+    var dur = 1100, t0 = performance.now();
+    function tick(t){
+      var p = Math.min(1,(t-t0)/dur), e = 1-Math.pow(1-p,3);
+      el.textContent = Math.round(e*to);
+      if(p<1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // copy buttons
+  document.querySelectorAll('[data-copy]').forEach(function(b){
+    b.addEventListener('click', function(){
+      navigator.clipboard && navigator.clipboard.writeText(b.dataset.copy).then(function(){
+        var o = b.textContent; b.textContent = 'copied!'; b.style.color = 'var(--acc)';
+        setTimeout(function(){ b.textContent = o; b.style.color=''; }, 1300);
+      });
+    });
+  });
+
+  document.getElementById('yr').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>
