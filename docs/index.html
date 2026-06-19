@@ -245,6 +245,11 @@
   a:focus-visible,button:focus-visible,.btn:focus-visible,.cp:focus-visible,.dl:focus-visible{outline:2px solid var(--acc);outline-offset:3px;border-radius:8px}
 
   /* ---------- responsive ---------- */
+  @media(max-width:1024px){
+    .xform{grid-template-columns:1fr}
+    .xform .arrow{padding:14px 0}
+    .xform .arrow .ring{transform:rotate(90deg)}
+  }
   @media(max-width:920px){
     .hero-grid{grid-template-columns:1fr;gap:36px}
     .feat-grid{grid-template-columns:repeat(2,1fr)}
@@ -335,20 +340,19 @@
         </div>
 <pre><span class="k">local</span> <span class="hl">Players</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">)</span>
 <span class="k">local</span> <span class="hl">RunService</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"RunService"</span><span class="p">)</span>
-<span class="k">local</span> <span class="hl">ReplicatedStorage</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">)</span>
-<span class="k">local</span> <span class="hl">spawnConfig</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="hl">ReplicatedStorage</span><span class="p">.</span>Shared<span class="p">.</span>SpawnConfig<span class="p">)</span>
 
-<span class="k">local</span> <span class="hl">localPlayer</span> <span class="p">=</span> <span class="hl">Players</span><span class="p">.</span>LocalPlayer
-<span class="k">local</span> <span class="hl">humanoid</span> <span class="p">=</span> <span class="hl">localPlayer</span><span class="p">.</span>Character<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"Humanoid"</span><span class="p">)</span>
+<span class="k">local</span> <span class="hl">player</span> <span class="p">=</span> <span class="hl">Players</span><span class="p">.</span>LocalPlayer
+<span class="k">local</span> <span class="hl">humanoid</span> <span class="p">=</span> <span class="hl">player</span><span class="p">.</span>Character<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"Humanoid"</span><span class="p">)</span>
 
 <span class="c">-- [-O2 INLINED, UNHOOKABLE] reconstructed definition;</span>
 <span class="k">local</span> <span class="k">function</span> <span class="fn hl">isAlive</span><span class="p">(</span><span class="hl">instance</span><span class="p">)</span>
-	<span class="k">return</span> <span class="hl">instance</span><span class="p">:</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"Dead"</span><span class="p">)</span> <span class="p">~=</span> <span class="k">true</span> <span class="k">and</span> <span class="hl">instance</span><span class="p">.</span>Health <span class="p">&gt;</span> <span class="n">0</span>
+	<span class="k">return</span> <span class="hl">instance</span><span class="p">.</span>Health <span class="p">&gt;</span> <span class="n">0</span>
 <span class="k">end</span>
 
 <span class="k">local</span> <span class="hl">connection</span> <span class="p">=</span> <span class="hl">RunService</span><span class="p">.</span>Heartbeat<span class="p">:</span><span class="fn">Connect</span><span class="p">(</span><span class="k">function</span><span class="p">(</span><span class="hl">dt</span><span class="p">)</span>
-	<span class="k">if</span> <span class="fn hl">isAlive</span><span class="p">(</span><span class="hl">humanoid</span><span class="p">)</span> <span class="k">then</span> <span class="c">-- inlined by Luau -O2 (UNHOOKABLE)</span>
-		<span class="fn">print</span><span class="p">(</span><span class="s">`[Spawner] {humanoid.Health} hp · {dt}s`</span><span class="p">)</span>
+	<span class="c">-- [-O2 INLINED, UNHOOKABLE] reconstructed call</span>
+	<span class="k">if</span> <span class="fn hl">isAlive</span><span class="p">(</span><span class="hl">humanoid</span><span class="p">)</span> <span class="k">then</span>
+		<span class="fn">print</span><span class="p">(</span><span class="s">`hp: {humanoid.Health}`</span><span class="p">)</span>
 	<span class="k">end</span>
 <span class="k">end</span><span class="p">)</span><span class="cur"></span></pre>
       </div>
@@ -380,29 +384,31 @@
         <div>
           <div class="win before reveal">
             <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-name">raw decompile<span class="ext">.luau</span></span></div>
-<pre class="sm"><span class="k">local</span> <span class="bad">v1</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">).</span>Shared<span class="p">.</span>SpawnConfig
+<pre class="sm"><span class="k">local</span> <span class="bad">v1</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">)</span>
+<span class="k">local</span> <span class="bad">v2</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"RunService"</span><span class="p">)</span>
+<span class="k">local</span> <span class="bad">v3</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="g">script</span><span class="p">.</span>Parent<span class="p">.</span>Config<span class="p">)</span>
 
-<span class="k">local</span> <span class="bad">v2</span> <span class="p">=</span> <span class="p">{}</span>
-<span class="bad">v2</span><span class="p">.</span>spawned <span class="p">=</span> <span class="n">0</span>
-<span class="bad">v2</span><span class="p">.</span>elapsed <span class="p">=</span> <span class="n">0</span>
+<span class="k">local</span> <span class="bad">v4</span> <span class="p">=</span> <span class="bad">v1</span><span class="p">.</span>LocalPlayer
+<span class="k">local</span> <span class="bad">v5</span> <span class="p">=</span> <span class="bad">v4</span><span class="p">.</span>Character<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"Humanoid"</span><span class="p">)</span>
+
+<span class="k">local</span> <span class="bad">v6</span> <span class="p">=</span> <span class="p">{}</span>
+<span class="bad">v6</span><span class="p">.</span>spawned <span class="p">=</span> <span class="n">0</span>
+<span class="bad">v6</span><span class="p">.</span>elapsed <span class="p">=</span> <span class="n">0</span>
 
 <span class="k">local</span> <span class="k">function</span> <span class="fn">u1</span><span class="p">(</span><span class="bad">p</span><span class="p">)</span>
-	<span class="k">if</span> <span class="k">not</span> <span class="p">(</span><span class="fn">typeof</span><span class="p">(</span><span class="bad">v1</span><span class="p">)</span> <span class="p">==</span> <span class="s">"table"</span> <span class="k">and</span> <span class="p">#</span><span class="bad">v1</span> <span class="p">~=</span> <span class="n">0</span><span class="p">)</span> <span class="k">then</span>
-		<span class="k">return</span>
-	<span class="k">end</span>
-	<span class="k">for</span> _<span class="p">,</span> <span class="bad">v3</span> <span class="k">in</span> <span class="fn">ipairs</span><span class="p">(</span><span class="bad">p</span><span class="p">:</span><span class="fn">GetChildren</span><span class="p">())</span> <span class="k">do</span>
-		<span class="k">if</span> <span class="bad">v3</span><span class="p">:</span><span class="fn">IsA</span><span class="p">(</span><span class="s">"BasePart"</span><span class="p">)</span> <span class="k">then</span>
-			<span class="k">local</span> <span class="bad">v4</span> <span class="p">=</span> <span class="bad">v3</span><span class="p">:</span><span class="fn">Clone</span><span class="p">()</span>
-			<span class="bad">v4</span><span class="p">.</span>Parent <span class="p">=</span> <span class="g">workspace</span>
-			<span class="bad">v2</span><span class="p">.</span>spawned <span class="p">=</span> <span class="bad">v2</span><span class="p">.</span>spawned <span class="p">+</span> <span class="n">1</span>
+	<span class="k">for</span> _<span class="p">,</span> <span class="bad">v7</span> <span class="k">in</span> <span class="fn">ipairs</span><span class="p">(</span><span class="bad">p</span><span class="p">:</span><span class="fn">GetChildren</span><span class="p">())</span> <span class="k">do</span>
+		<span class="k">if</span> <span class="bad">v7</span><span class="p">:</span><span class="fn">IsA</span><span class="p">(</span><span class="s">"BasePart"</span><span class="p">)</span> <span class="k">then</span>
+			<span class="k">local</span> <span class="bad">v8</span> <span class="p">=</span> <span class="bad">v7</span><span class="p">:</span><span class="fn">Clone</span><span class="p">()</span>
+			<span class="bad">v8</span><span class="p">.</span>Parent <span class="p">=</span> <span class="g">workspace</span>
+			<span class="bad">v6</span><span class="p">.</span>spawned <span class="p">=</span> <span class="bad">v6</span><span class="p">.</span>spawned <span class="p">+</span> <span class="n">1</span>
 		<span class="k">end</span>
 	<span class="k">end</span>
 <span class="k">end</span>
 
-<span class="k">local</span> <span class="bad">v5</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"RunService"</span><span class="p">).</span>Heartbeat<span class="p">:</span><span class="fn">Connect</span><span class="p">(</span><span class="k">function</span><span class="p">(</span><span class="bad">p2</span><span class="p">)</span>
-	<span class="bad">v2</span><span class="p">.</span>elapsed <span class="p">=</span> <span class="bad">v2</span><span class="p">.</span>elapsed <span class="p">+</span> <span class="bad">p2</span>
-	<span class="k">if</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">).</span>LocalPlayer<span class="p">.</span>Character<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"Humanoid"</span><span class="p">):</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"Dead"</span><span class="p">)</span> <span class="p">~=</span> <span class="k">true</span> <span class="k">and</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">).</span>LocalPlayer<span class="p">.</span>Character<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"Humanoid"</span><span class="p">).</span>Health <span class="p">&gt;</span> <span class="n">0</span> <span class="k">then</span>
-		<span class="fn">print</span><span class="p">((</span><span class="s">"[Spawner] %* alive · %*s"</span><span class="p">):</span><span class="fn">format</span><span class="p">(</span><span class="bad">v2</span><span class="p">.</span>spawned<span class="p">,</span> <span class="bad">v2</span><span class="p">.</span>elapsed<span class="p">))</span>
+<span class="k">local</span> <span class="bad">v9</span> <span class="p">=</span> <span class="bad">v2</span><span class="p">.</span>Heartbeat<span class="p">:</span><span class="fn">Connect</span><span class="p">(</span><span class="k">function</span><span class="p">(</span><span class="bad">p2</span><span class="p">)</span>
+	<span class="bad">v6</span><span class="p">.</span>elapsed <span class="p">=</span> <span class="bad">v6</span><span class="p">.</span>elapsed <span class="p">+</span> <span class="bad">p2</span>
+	<span class="k">if</span> <span class="bad">v5</span><span class="p">.</span>Health <span class="p">&gt;</span> <span class="n">0</span> <span class="k">then</span>
+		<span class="fn">print</span><span class="p">((</span><span class="s">"alive: %* · %*s"</span><span class="p">):</span><span class="fn">format</span><span class="p">(</span><span class="bad">v6</span><span class="p">.</span>spawned<span class="p">,</span> <span class="bad">v6</span><span class="p">.</span>elapsed<span class="p">))</span>
 	<span class="k">end</span>
 <span class="k">end</span><span class="p">)</span></pre>
           </div>
@@ -420,11 +426,10 @@
             <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-name">tovek<span class="ext">.luau</span></span><span class="win-tag"><span class="blink"></span>tovek</span></div>
 <pre class="sm"><span class="k">local</span> <span class="hl">Players</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">)</span>
 <span class="k">local</span> <span class="hl">RunService</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"RunService"</span><span class="p">)</span>
-<span class="k">local</span> <span class="hl">ReplicatedStorage</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">)</span>
-<span class="k">local</span> <span class="hl">spawnConfig</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="hl">ReplicatedStorage</span><span class="p">.</span>Shared<span class="p">.</span>SpawnConfig<span class="p">)</span>
+<span class="k">local</span> <span class="hl">config</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="g">script</span><span class="p">.</span>Parent<span class="p">.</span>Config<span class="p">)</span>
 
-<span class="k">local</span> <span class="hl">localPlayer</span> <span class="p">=</span> <span class="hl">Players</span><span class="p">.</span>LocalPlayer
-<span class="k">local</span> <span class="hl">humanoid</span> <span class="p">=</span> <span class="hl">localPlayer</span><span class="p">.</span>Character<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"Humanoid"</span><span class="p">)</span>
+<span class="k">local</span> <span class="hl">player</span> <span class="p">=</span> <span class="hl">Players</span><span class="p">.</span>LocalPlayer
+<span class="k">local</span> <span class="hl">humanoid</span> <span class="p">=</span> <span class="hl">player</span><span class="p">.</span>Character<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"Humanoid"</span><span class="p">)</span>
 
 <span class="k">local</span> <span class="hl">stats</span> <span class="p">=</span> <span class="p">{</span>
 	spawned <span class="p">=</span> <span class="n">0</span><span class="p">,</span>
@@ -433,13 +438,10 @@
 
 <span class="c">-- [-O2 INLINED, UNHOOKABLE] reconstructed definition;</span>
 <span class="k">local</span> <span class="k">function</span> <span class="fn hl">isAlive</span><span class="p">(</span><span class="hl">instance</span><span class="p">)</span>
-	<span class="k">return</span> <span class="hl">instance</span><span class="p">:</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"Dead"</span><span class="p">)</span> <span class="p">~=</span> <span class="k">true</span> <span class="k">and</span> <span class="hl">instance</span><span class="p">.</span>Health <span class="p">&gt;</span> <span class="n">0</span>
+	<span class="k">return</span> <span class="hl">instance</span><span class="p">.</span>Health <span class="p">&gt;</span> <span class="n">0</span>
 <span class="k">end</span>
 
 <span class="k">local</span> <span class="k">function</span> <span class="fn hl">spawnWave</span><span class="p">(</span><span class="hl">folder</span><span class="p">)</span>
-	<span class="k">if</span> <span class="fn">typeof</span><span class="p">(</span><span class="hl">spawnConfig</span><span class="p">)</span> <span class="p">~=</span> <span class="s">"table"</span> <span class="k">or</span> <span class="p">#</span><span class="hl">spawnConfig</span> <span class="p">==</span> <span class="n">0</span> <span class="k">then</span>
-		<span class="k">return</span>
-	<span class="k">end</span>
 	<span class="k">for</span> _<span class="p">,</span> <span class="hl">child</span> <span class="k">in</span> <span class="fn">ipairs</span><span class="p">(</span><span class="hl">folder</span><span class="p">:</span><span class="fn">GetChildren</span><span class="p">())</span> <span class="k">do</span>
 		<span class="k">if</span> <span class="hl">child</span><span class="p">:</span><span class="fn">IsA</span><span class="p">(</span><span class="s">"BasePart"</span><span class="p">)</span> <span class="k">then</span>
 			<span class="k">local</span> <span class="hl">clone</span> <span class="p">=</span> <span class="hl">child</span><span class="p">:</span><span class="fn">Clone</span><span class="p">()</span>
@@ -451,8 +453,9 @@
 
 <span class="k">local</span> <span class="hl">connection</span> <span class="p">=</span> <span class="hl">RunService</span><span class="p">.</span>Heartbeat<span class="p">:</span><span class="fn">Connect</span><span class="p">(</span><span class="k">function</span><span class="p">(</span><span class="hl">dt</span><span class="p">)</span>
 	<span class="hl">stats</span><span class="p">.</span>elapsed <span class="p">+=</span> <span class="hl">dt</span>
-	<span class="k">if</span> <span class="fn hl">isAlive</span><span class="p">(</span><span class="hl">humanoid</span><span class="p">)</span> <span class="k">then</span> <span class="c">-- inlined by Luau -O2 (UNHOOKABLE)</span>
-		<span class="fn">print</span><span class="p">(</span><span class="s">`[Spawner] {stats.spawned} alive · {stats.elapsed}s`</span><span class="p">)</span>
+	<span class="c">-- [-O2 INLINED, UNHOOKABLE] reconstructed call</span>
+	<span class="k">if</span> <span class="fn hl">isAlive</span><span class="p">(</span><span class="hl">humanoid</span><span class="p">)</span> <span class="k">then</span>
+		<span class="fn">print</span><span class="p">(</span><span class="s">`alive: {stats.spawned} · {stats.elapsed}s`</span><span class="p">)</span>
 	<span class="k">end</span>
 <span class="k">end</span><span class="p">)</span></pre>
           </div>
@@ -460,7 +463,7 @@
         </div>
       </div>
       <p class="xform-note">An illustrative before → after — every transformation shown is a genuine Tovek pass. The demo further down is verbatim, unedited output.</p>
-      <div class="xform-feats"><span>name inference</span><span>service + require handles</span><span>-O2 de-inline</span><span>condition normalize</span><span>compound +=</span><span>:Clone → clone</span><span>loop + :IsA naming</span><span>table rebuild</span><span>backtick interpolation</span><span>event param dt</span></div>
+      <div class="xform-feats"><span>name inference</span><span>service + require handles</span><span>-O2 de-inline</span><span>compound +=</span><span>:Clone → clone</span><span>loop + :IsA naming</span><span>table rebuild</span><span>backtick interpolation</span><span>event param dt</span></div>
     </div>
   </section>
 
@@ -544,35 +547,34 @@
       </div>
       <div class="demo-grid">
         <div class="demo-note">
-          <div class="row reveal"><span class="b">1</span><p><b>Services &amp; modules, named.</b> Every <code>GetService</code> and <code>require</code> handle is kept as one readable header local.</p></div>
-          <div class="row reveal" style="--d:80ms"><span class="b">2</span><p><b>Inferred from usage.</b> <code>localPlayer</code>, <code>bugModels</code>, <code>runtimeModelSanitizer</code> — names recovered from how each value is used.</p></div>
-          <div class="row reveal" style="--d:160ms"><span class="b">3</span><p><b>Tables rebuilt.</b> Field-by-field <code>t.x = …</code> bytecode is reassembled into a single table literal.</p></div>
-          <div class="row reveal" style="--d:240ms"><span class="b">4</span><p><b>Honest by default.</b> When a name cannot be inferred soundly, Tovek keeps a neutral <code>v</code> rather than guessing — nothing is invented.</p></div>
+          <div class="row reveal"><span class="b">1</span><p><b>Recovered functions.</b> Helpers the <code>-O2</code> compiler inlined are rebuilt as named <code>local function</code>s, with the seam marked.</p></div>
+          <div class="row reveal" style="--d:80ms"><span class="b">2</span><p><b>Inferred from usage.</b> <code>color</code> from <code>Color3.fromRGB</code>; <code>track</code> &amp; <code>cleanupConnections</code> from their debug names.</p></div>
+          <div class="row reveal" style="--d:160ms"><span class="b">3</span><p><b>Tables rebuilt.</b> A module table written field-by-field is reassembled into a single literal.</p></div>
+          <div class="row reveal" style="--d:240ms"><span class="b">4</span><p><b>Honest by default.</b> Parameters with no usage signal stay a neutral <code>p</code> — names are inferred, never invented.</p></div>
         </div>
         <div class="win reveal" style="--d:120ms">
-          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-name">BugsReplicator.client<span class="ext">.luau</span></span><span class="win-tag"><span class="blink"></span>tovek</span></div>
-<pre><span class="k">local</span> <span class="hl">Players</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">)</span>
-<span class="k">local</span> <span class="hl">ReplicatedStorage</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">)</span>
-<span class="k">local</span> <span class="hl">RunService</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"RunService"</span><span class="p">)</span>
-<span class="k">local</span> <span class="hl">localPlayer</span> <span class="p">=</span> <span class="hl">Players</span><span class="p">.</span>LocalPlayer
-<span class="k">local</span> <span class="hl">bugModels</span> <span class="p">=</span> <span class="hl">ReplicatedStorage</span><span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"BugModels"</span><span class="p">)</span>
-<span class="k">local</span> <span class="hl">runtimeModelSanitizer</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="hl">ReplicatedStorage</span><span class="p">.</span>Shared<span class="p">.</span>Modules<span class="p">.</span>RuntimeModelSanitizer<span class="p">)</span>
-<span class="k">local</span> <span class="hl">clientPerformanceDebug</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="g">script</span><span class="p">.</span>Parent<span class="p">.</span>Parent<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"ClientPerformanceDebug"</span><span class="p">))</span>
-<span class="k">local</span> v <span class="p">=</span> <span class="p">{}</span>
-<span class="k">local</span> <span class="hl">result</span> <span class="p">=</span> <span class="p">{}</span>
-<span class="k">local</span> v2 <span class="p">=</span> <span class="k">false</span>
-<span class="k">local</span> <span class="hl">connection</span> <span class="p">=</span> <span class="k">nil</span>
-<span class="k">local</span> v3 <span class="p">=</span> <span class="k">false</span>
-<span class="k">local</span> v4 <span class="p">=</span> <span class="k">false</span>
-<span class="k">local</span> fn <span class="p">=</span> <span class="k">nil</span>
-<span class="k">local</span> v5 <span class="p">=</span> <span class="p">{</span>
-	activeOrbitRecords <span class="p">=</span> <span class="n">0</span><span class="p">,</span>
-	lastOrbitUpdates <span class="p">=</span> <span class="n">0</span><span class="p">,</span>
-	lastOrbitFailures <span class="p">=</span> <span class="n">0</span><span class="p">,</span>
-	orbitHeartbeatConnections <span class="p">=</span> <span class="n">0</span><span class="p">,</span>
-	monitorLoops <span class="p">=</span> <span class="n">0</span><span class="p">,</span>
-	monitorIterations <span class="p">=</span> <span class="n">0</span>
-<span class="p">}</span></pre>
+          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-name">ShovelHighlight<span class="ext">.luau</span></span><span class="win-tag"><span class="blink"></span>tovek</span></div>
+<pre><span class="k">local</span> <span class="hl">ShovelHighlight</span> <span class="p">=</span> <span class="p">{</span>
+	_initialized <span class="p">=</span> <span class="k">false</span><span class="p">,</span>
+	_connections <span class="p">=</span> <span class="p">{},</span>
+	_currentHighlight <span class="p">=</span> <span class="k">nil</span><span class="p">,</span>
+	_lastTarget <span class="p">=</span> <span class="k">nil</span><span class="p">,</span>
+	_equippedShovelType <span class="p">=</span> <span class="k">nil</span>
+<span class="p">}</span>
+<span class="k">local</span> <span class="hl">color</span> <span class="p">=</span> <span class="g">Color3</span><span class="p">.</span><span class="fn">fromRGB</span><span class="p">(</span><span class="n">255</span><span class="p">,</span> <span class="n">220</span><span class="p">,</span> <span class="n">100</span><span class="p">)</span>
+
+<span class="k">local</span> <span class="k">function</span> <span class="fn hl">track</span><span class="p">(</span>p<span class="p">,</span> p2<span class="p">)</span>
+	<span class="g">table</span><span class="p">.</span><span class="fn">insert</span><span class="p">(</span>p<span class="p">.</span>_connections<span class="p">,</span> p2<span class="p">)</span>
+	<span class="k">return</span> p2
+<span class="k">end</span>
+<span class="c">--  [-O2 INLINED, UNHOOKABLE] reconstructed definition;</span>
+<span class="k">local</span> <span class="k">function</span> <span class="fn hl">cleanupConnections</span><span class="p">(</span>p<span class="p">)</span>
+	<span class="k">for</span> _<span class="p">,</span> <span class="hl">_connection</span> <span class="k">in</span> p<span class="p">.</span>_connections <span class="k">do</span>
+		<span class="hl">_connection</span><span class="p">:</span><span class="fn">Disconnect</span><span class="p">()</span>
+	<span class="k">end</span>
+
+	<span class="g">table</span><span class="p">.</span><span class="fn">clear</span><span class="p">(</span>p<span class="p">.</span>_connections<span class="p">)</span>
+<span class="k">end</span></pre>
         </div>
       </div>
     </div>
