@@ -221,6 +221,16 @@ pub fn try_decompile_bytecode_with_script_name(
             // expr_deinline (which neither creates nor consumes this idiom). With
             // pass (B) below it reproduces the source `lastStats.floors += 1`.
             ast::copy_cleanup::copy_cleanup(&mut body);
+            // Eliminate redundant `x = nil` stores left by SSA phi-node
+            // materialization (a predeclared `local x` then explicit `x = nil` on
+            // every path it stays nil). A forward "definitely-nil" dataflow deletes
+            // a `x = nil` only when x is provably already nil there. Runs AFTER
+            // `reconstruct_conditional_expressions` (214) — which needs the
+            // predecl+phi diamond to recover `if c then A else nil` ternaries — and
+            // after the write-count-gated `inline_single_use_temps`/`copy_cleanup`
+            // (whose decisions a write-count change here must not perturb). BEFORE
+            // `recover_guard_continue` (which must stay last).
+            ast::eliminate_nil::eliminate_redundant_nil(&mut body);
             // Expression-level de-inline (proposal §7): recover small pure scalar
             // helpers that `-O2` inlined as a sub-expression of a caller's
             // condition/RValue. MUST run after reconstruct_conditional_expressions

@@ -289,10 +289,26 @@ fn binary_lookup_method_call(binary: &Binary) -> Option<&MethodCall> {
     }
 }
 
-/// Name a local after the nil-guarded instance lookup it stores, exactly as the
-/// bare call would be named (see [`binary_lookup_method_call`]).
-fn binary_lookup_hint(binary: &Binary) -> Option<String> {
-    method_call_hint(binary_lookup_method_call(binary)?)
+/// Name a local after the operand its short-circuit expression *yields*: `A or B`
+/// evaluates to its LEFT (primary) operand when truthy, `A and B` to its RIGHT
+/// (guarded) operand. The chosen operand is named through the general
+/// [`rvalue_hint`], so a field-access primary names uniformly
+/// (`localPlayer.Character or localPlayer.CharacterAdded:Wait()` -> `character`),
+/// a global names after the global, and a nested short-circuit chain recurses —
+/// while the nil-guard `inst and inst:FindFirstChild("X")` keeps the method-call
+/// name it always had (`rvalue_hint` routes the `MethodCall` operand through
+/// `method_call_hint`, a strict superset of the old method-call-only behaviour).
+///
+/// `binary_lookup_method_call` above is intentionally kept: it is still used by
+/// `guarded_lookup_qualified_hint`, which needs the `&MethodCall` itself to
+/// parent-qualify a generic child lookup. Recursion terminates because each step
+/// descends into a strictly smaller `Box<RValue>` subtree of a finite AST.
+fn binary_value_hint(binary: &Binary) -> Option<String> {
+    match binary.operation {
+        BinaryOperation::Or => rvalue_hint(&binary.left),
+        BinaryOperation::And => rvalue_hint(&binary.right),
+        _ => None,
+    }
 }
 
 /// The descriptive key of a boolean test's subject: a field access names after its
@@ -415,9 +431,12 @@ fn rvalue_hint(rvalue: &RValue) -> Option<String> {
             method_call_hint(method_call)
         }
         RValue::Global(global) => std::str::from_utf8(&global.0).ok().and_then(sanitize),
-        // `folder and folder:FindFirstChild("Client")` and friends: a nil-guarded
-        // instance lookup is named after the lookup, exactly as the bare call is.
-        RValue::Binary(binary) => binary_lookup_hint(binary),
+        // A short-circuit value expression is named after the operand it yields:
+        // `A or B` -> A (primary), `A and B` -> B (guarded). So the nil-guard
+        // `folder and folder:FindFirstChild("Client")` is named after its lookup,
+        // and `localPlayer.Character or localPlayer.CharacterAdded:Wait()` after
+        // its primary field (`character`).
+        RValue::Binary(binary) => binary_value_hint(binary),
         // Luau bytecode keeps a debug name for each function (e.g. the name a
         // `local function isGroundHit` was defined with). The lifter stores it in
         // `Function::name`; prefer it so a closure-valued local reads as its real
@@ -3715,6 +3734,116 @@ mod tests {
             "FindFirstChild".to_string(),
             vec![string(child)],
         ))
+    }
+
+    /// Problem 1: `local character = localPlayer.Character or
+    /// localPlayer.CharacterAdded:Wait()`. The `or`'s LEFT (primary) operand is a
+    /// field read, so the local is named after that field; the method-call
+    /// fallback on the right is not consulted.
+    #[test]
+    fn or_primary_field_names_local() {
+        let local_player = named_local("localPlayer");
+        let character = RcLocal::default();
+        let value = RValue::Binary(Binary::new(
+            RValue::Index(Index::new(RValue::Local(local_player.clone()), string("Character"))),
+            RValue::MethodCall(MethodCall::new(
+                RValue::Index(Index::new(
+                    RValue::Local(local_player.clone()),
+                    string("CharacterAdded"),
+                )),
+                "Wait".to_string(),
+                vec![],
+            )),
+            BinaryOperation::Or,
+        ));
+        let mut block = Block(vec![
+            declare(&character, value),
+            use_local(&character),
+            use_local(&local_player),
+        ]);
+
+        name_locals(&mut block, true);
+        assert_eq!(name_of(&character), "character");
+    }
+
+    /// An `and`-guard whose RIGHT (guarded) operand is a plain field read is now
+    /// named after that field: `local parent = inst and inst.Parent` -> `parent`.
+    #[test]
+    fn and_guard_field_rhs_names_local() {
+        let inst = named_local("inst");
+        let parent = RcLocal::default();
+        let value = RValue::Binary(Binary::new(
+            RValue::Local(inst.clone()),
+            RValue::Index(Index::new(RValue::Local(inst.clone()), string("Parent"))),
+            BinaryOperation::And,
+        ));
+        let mut block = Block(vec![
+            declare(&parent, value),
+            use_local(&parent),
+            use_local(&inst),
+        ]);
+
+        name_locals(&mut block, true);
+        assert_eq!(name_of(&parent), "parent");
+    }
+
+    /// Regression anchor: the nil-guarded *method-call* lookup is unchanged by the
+    /// generalized binary hint — `inst and inst:FindFirstChild("Humanoid")` still
+    /// names `humanoid` (And -> right MethodCall -> method_call_hint).
+    #[test]
+    fn and_guard_method_lookup_still_named() {
+        let inst = named_local("inst");
+        let humanoid = RcLocal::default();
+        let mut block = Block(vec![
+            declare(&humanoid, guarded_find(RValue::Local(inst.clone()), "Humanoid")),
+            use_local(&humanoid),
+            use_local(&inst),
+        ]);
+
+        name_locals(&mut block, true);
+        assert_eq!(name_of(&humanoid), "humanoid");
+    }
+
+    /// A left-associated `or` chain names after the LEFTMOST primary:
+    /// `local first = a.First or b or c` -> `first` (Or -> left -> Or -> left ->
+    /// Index). Exercises the recursive descent through nested `Or`.
+    #[test]
+    fn or_left_associated_chain_names_leftmost() {
+        let first = RcLocal::default();
+        let inner = RValue::Binary(Binary::new(
+            RValue::Index(Index::new(global("a"), string("First"))),
+            global("b"),
+            BinaryOperation::Or,
+        ));
+        let value = RValue::Binary(Binary::new(inner, global("c"), BinaryOperation::Or));
+        let mut block = Block(vec![declare(&first, value), use_local(&first)]);
+
+        name_locals(&mut block, true);
+        assert_eq!(name_of(&first), "first");
+    }
+
+    /// A binary whose chosen operand carries no name (`alpha and beta`, both bare
+    /// locals) leaves the local at its default generated name — the soundness
+    /// boundary: we never invent a name from an unnameable operand.
+    #[test]
+    fn binary_with_unnameable_operands_stays_default() {
+        let alpha = named_local("alpha");
+        let beta = named_local("beta");
+        let result = RcLocal::default();
+        let value = RValue::Binary(Binary::new(
+            RValue::Local(alpha.clone()),
+            RValue::Local(beta.clone()),
+            BinaryOperation::And,
+        ));
+        let mut block = Block(vec![
+            declare(&result, value),
+            use_local(&result),
+            use_local(&alpha),
+            use_local(&beta),
+        ]);
+
+        name_locals(&mut block, true);
+        assert_eq!(name_of(&result), "v");
     }
 
     /// The flagship case (ClientPerformanceDebug): guarded lookups are named after
