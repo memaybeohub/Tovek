@@ -140,6 +140,8 @@
   .xform .arrow svg{width:22px;height:22px}
   .xform .lab{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin-top:9px;text-align:center}
   .xform-note{font-family:var(--mono);font-size:11.5px;color:var(--faint);text-align:center;margin-top:20px;max-width:60em;margin-inline:auto}
+  .xform-feats{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:18px}
+  .xform-feats span{font-family:var(--mono);font-size:11px;color:var(--acc);border:1px solid rgba(194,249,90,.22);border-radius:99px;padding:4px 11px;background:rgba(194,249,90,.05)}
 
   /* ---------- stats ---------- */
   .stats{border-block:1px solid var(--line);background:rgba(255,255,255,.012)}
@@ -328,27 +330,27 @@
       <div class="win reveal" style="--d:240ms">
         <div class="win-bar">
           <span class="dots"><i></i><i></i><i></i></span>
-          <span class="win-name">AfkClient.client<span class="ext">.luau</span></span>
+          <span class="win-name">BugSpawner.client<span class="ext">.luau</span></span>
           <span class="win-tag"><span class="blink"></span>decoded</span>
         </div>
 <pre><span class="k">local</span> <span class="hl">Players</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">)</span>
+<span class="k">local</span> <span class="hl">RunService</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"RunService"</span><span class="p">)</span>
 <span class="k">local</span> <span class="hl">ReplicatedStorage</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">)</span>
-<span class="k">local</span> <span class="hl">afkConfig</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="hl">ReplicatedStorage</span><span class="p">.</span>Shared<span class="p">.</span>Data<span class="p">.</span>AfkConfig<span class="p">)</span>
-
-<span class="k">local function</span> <span class="fn hl">isAfkEnabled</span><span class="p">()</span>
-	<span class="k">local</span> <span class="hl">placeId</span> <span class="p">=</span> <span class="fn">tonumber</span><span class="p">(</span><span class="hl">afkConfig</span><span class="p">.</span>PlaceId<span class="p">)</span>
-	<span class="k">if</span> <span class="hl">afkConfig</span><span class="p">.</span>Enabled <span class="p">==</span> <span class="k">false</span> <span class="k">then</span>
-		<span class="k">return</span> <span class="k">false</span>
-	<span class="k">end</span>
-	<span class="k">if</span> <span class="hl">placeId</span> <span class="k">and</span> <span class="hl">placeId</span> <span class="p">&gt;</span> <span class="n">0</span> <span class="k">then</span>
-		<span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="hl">placeId</span>
-	<span class="k">else</span>
-		<span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="n">0</span>
-	<span class="k">end</span>
-<span class="k">end</span>
+<span class="k">local</span> <span class="hl">spawnConfig</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="hl">ReplicatedStorage</span><span class="p">.</span>Shared<span class="p">.</span>SpawnConfig<span class="p">)</span>
 
 <span class="k">local</span> <span class="hl">localPlayer</span> <span class="p">=</span> <span class="hl">Players</span><span class="p">.</span>LocalPlayer
-<span class="k">repeat</span> <span class="g">task</span><span class="p">.</span><span class="fn">wait</span><span class="p">()</span> <span class="k">until</span> <span class="hl">localPlayer</span><span class="p">:</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"DataLoaded"</span><span class="p">)</span><span class="cur"></span></pre>
+<span class="k">local</span> <span class="hl">humanoid</span> <span class="p">=</span> <span class="hl">localPlayer</span><span class="p">.</span>Character<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"Humanoid"</span><span class="p">)</span>
+
+<span class="c">-- [-O2 INLINED, UNHOOKABLE] reconstructed definition;</span>
+<span class="k">local</span> <span class="k">function</span> <span class="fn hl">isAlive</span><span class="p">(</span><span class="hl">instance</span><span class="p">)</span>
+	<span class="k">return</span> <span class="hl">instance</span><span class="p">:</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"Dead"</span><span class="p">)</span> <span class="p">~=</span> <span class="k">true</span> <span class="k">and</span> <span class="hl">instance</span><span class="p">.</span>Health <span class="p">&gt;</span> <span class="n">0</span>
+<span class="k">end</span>
+
+<span class="k">local</span> <span class="hl">connection</span> <span class="p">=</span> <span class="hl">RunService</span><span class="p">.</span>Heartbeat<span class="p">:</span><span class="fn">Connect</span><span class="p">(</span><span class="k">function</span><span class="p">(</span><span class="hl">dt</span><span class="p">)</span>
+	<span class="k">if</span> <span class="fn hl">isAlive</span><span class="p">(</span><span class="hl">humanoid</span><span class="p">)</span> <span class="k">then</span> <span class="c">-- inlined by Luau -O2 (UNHOOKABLE)</span>
+		<span class="fn">print</span><span class="p">(</span><span class="s">`[Spawner] {humanoid.Health} hp · {dt}s`</span><span class="p">)</span>
+	<span class="k">end</span>
+<span class="k">end</span><span class="p">)</span><span class="cur"></span></pre>
       </div>
     </div>
   </section>
@@ -378,22 +380,33 @@
         <div>
           <div class="win before reveal">
             <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-name">raw decompile<span class="ext">.luau</span></span></div>
-<pre class="sm"><span class="k">local</span> <span class="bad">v1</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">)</span>
-<span class="k">local function</span> <span class="bad">u1</span><span class="p">()</span>
-    <span class="k">local</span> <span class="bad">v2</span> <span class="p">=</span> <span class="fn">tonumber</span><span class="p">(</span><span class="bad">v1</span><span class="p">.</span>Shared<span class="p">.</span>Data<span class="p">.</span>AfkConfig<span class="p">.</span>PlaceId<span class="p">)</span>
-    <span class="k">if</span> <span class="bad">v1</span><span class="p">.</span>Shared<span class="p">.</span>Data<span class="p">.</span>AfkConfig<span class="p">.</span>Enabled <span class="p">==</span> <span class="k">false</span> <span class="k">then</span>
-        <span class="k">return</span> <span class="k">false</span>
-    <span class="k">end</span>
-    <span class="k">if</span> <span class="bad">v2</span> <span class="k">and</span> <span class="bad">v2</span> <span class="p">&gt;</span> <span class="n">0</span> <span class="k">then</span>
-        <span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="bad">v2</span>
-    <span class="k">end</span>
-    <span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="n">0</span>
+<pre class="sm"><span class="k">local</span> <span class="bad">v1</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">).</span>Shared<span class="p">.</span>SpawnConfig
+
+<span class="k">local</span> <span class="bad">v2</span> <span class="p">=</span> <span class="p">{}</span>
+<span class="bad">v2</span><span class="p">.</span>spawned <span class="p">=</span> <span class="n">0</span>
+<span class="bad">v2</span><span class="p">.</span>elapsed <span class="p">=</span> <span class="n">0</span>
+
+<span class="k">local</span> <span class="k">function</span> <span class="fn">u1</span><span class="p">(</span><span class="bad">p</span><span class="p">)</span>
+	<span class="k">if</span> <span class="k">not</span> <span class="p">(</span><span class="fn">typeof</span><span class="p">(</span><span class="bad">v1</span><span class="p">)</span> <span class="p">==</span> <span class="s">"table"</span> <span class="k">and</span> <span class="p">#</span><span class="bad">v1</span> <span class="p">~=</span> <span class="n">0</span><span class="p">)</span> <span class="k">then</span>
+		<span class="k">return</span>
+	<span class="k">end</span>
+	<span class="k">for</span> _<span class="p">,</span> <span class="bad">v3</span> <span class="k">in</span> <span class="fn">ipairs</span><span class="p">(</span><span class="bad">p</span><span class="p">:</span><span class="fn">GetChildren</span><span class="p">())</span> <span class="k">do</span>
+		<span class="k">if</span> <span class="bad">v3</span><span class="p">:</span><span class="fn">IsA</span><span class="p">(</span><span class="s">"BasePart"</span><span class="p">)</span> <span class="k">then</span>
+			<span class="k">local</span> <span class="bad">v4</span> <span class="p">=</span> <span class="bad">v3</span><span class="p">:</span><span class="fn">Clone</span><span class="p">()</span>
+			<span class="bad">v4</span><span class="p">.</span>Parent <span class="p">=</span> <span class="g">workspace</span>
+			<span class="bad">v2</span><span class="p">.</span>spawned <span class="p">=</span> <span class="bad">v2</span><span class="p">.</span>spawned <span class="p">+</span> <span class="n">1</span>
+		<span class="k">end</span>
+	<span class="k">end</span>
 <span class="k">end</span>
-<span class="k">if</span> <span class="k">not</span> <span class="bad">u1</span><span class="p">()</span> <span class="k">then</span> <span class="k">return</span> <span class="k">end</span>
-<span class="k">local</span> <span class="bad">v3</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">)</span><span class="p">.</span>LocalPlayer
-<span class="k">repeat</span> <span class="g">task</span><span class="p">.</span><span class="fn">wait</span><span class="p">()</span> <span class="k">until</span> <span class="bad">v3</span><span class="p">:</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"DataLoaded"</span><span class="p">)</span></pre>
+
+<span class="k">local</span> <span class="bad">v5</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"RunService"</span><span class="p">).</span>Heartbeat<span class="p">:</span><span class="fn">Connect</span><span class="p">(</span><span class="k">function</span><span class="p">(</span><span class="bad">p2</span><span class="p">)</span>
+	<span class="bad">v2</span><span class="p">.</span>elapsed <span class="p">=</span> <span class="bad">v2</span><span class="p">.</span>elapsed <span class="p">+</span> <span class="bad">p2</span>
+	<span class="k">if</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">).</span>LocalPlayer<span class="p">.</span>Character<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"Humanoid"</span><span class="p">):</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"Dead"</span><span class="p">)</span> <span class="p">~=</span> <span class="k">true</span> <span class="k">and</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">).</span>LocalPlayer<span class="p">.</span>Character<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"Humanoid"</span><span class="p">).</span>Health <span class="p">&gt;</span> <span class="n">0</span> <span class="k">then</span>
+		<span class="fn">print</span><span class="p">((</span><span class="s">"[Spawner] %* alive · %*s"</span><span class="p">):</span><span class="fn">format</span><span class="p">(</span><span class="bad">v2</span><span class="p">.</span>spawned<span class="p">,</span> <span class="bad">v2</span><span class="p">.</span>elapsed<span class="p">))</span>
+	<span class="k">end</span>
+<span class="k">end</span><span class="p">)</span></pre>
           </div>
-          <div class="lab">v1 · v2 · u1 · inlined services · repeated chains</div>
+          <div class="lab">v1 · v2 · u1 · inlined -O2 body · duplicated GetService</div>
         </div>
 
         <div class="arrow reveal" style="--d:120ms">
@@ -406,24 +419,48 @@
           <div class="win reveal" style="--d:160ms">
             <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-name">tovek<span class="ext">.luau</span></span><span class="win-tag"><span class="blink"></span>tovek</span></div>
 <pre class="sm"><span class="k">local</span> <span class="hl">Players</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">)</span>
+<span class="k">local</span> <span class="hl">RunService</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"RunService"</span><span class="p">)</span>
 <span class="k">local</span> <span class="hl">ReplicatedStorage</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">)</span>
-<span class="k">local</span> <span class="hl">afkConfig</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="hl">ReplicatedStorage</span><span class="p">.</span>Shared<span class="p">.</span>Data<span class="p">.</span>AfkConfig<span class="p">)</span>
-<span class="k">local function</span> <span class="fn hl">isAfkEnabled</span><span class="p">()</span>
-    <span class="k">local</span> <span class="hl">placeId</span> <span class="p">=</span> <span class="fn">tonumber</span><span class="p">(</span><span class="hl">afkConfig</span><span class="p">.</span>PlaceId<span class="p">)</span>
-    <span class="k">if</span> <span class="hl">afkConfig</span><span class="p">.</span>Enabled <span class="p">==</span> <span class="k">false</span> <span class="k">then</span> <span class="k">return</span> <span class="k">false</span> <span class="k">end</span>
-    <span class="k">if</span> <span class="hl">placeId</span> <span class="k">and</span> <span class="hl">placeId</span> <span class="p">&gt;</span> <span class="n">0</span> <span class="k">then</span>
-        <span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="hl">placeId</span>
-    <span class="k">else</span>
-        <span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="n">0</span>
-    <span class="k">end</span>
-<span class="k">end</span>
+<span class="k">local</span> <span class="hl">spawnConfig</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="hl">ReplicatedStorage</span><span class="p">.</span>Shared<span class="p">.</span>SpawnConfig<span class="p">)</span>
+
 <span class="k">local</span> <span class="hl">localPlayer</span> <span class="p">=</span> <span class="hl">Players</span><span class="p">.</span>LocalPlayer
-<span class="k">repeat</span> <span class="g">task</span><span class="p">.</span><span class="fn">wait</span><span class="p">()</span> <span class="k">until</span> <span class="hl">localPlayer</span><span class="p">:</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"DataLoaded"</span><span class="p">)</span></pre>
+<span class="k">local</span> <span class="hl">humanoid</span> <span class="p">=</span> <span class="hl">localPlayer</span><span class="p">.</span>Character<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"Humanoid"</span><span class="p">)</span>
+
+<span class="k">local</span> <span class="hl">stats</span> <span class="p">=</span> <span class="p">{</span>
+	spawned <span class="p">=</span> <span class="n">0</span><span class="p">,</span>
+	elapsed <span class="p">=</span> <span class="n">0</span>
+<span class="p">}</span>
+
+<span class="c">-- [-O2 INLINED, UNHOOKABLE] reconstructed definition;</span>
+<span class="k">local</span> <span class="k">function</span> <span class="fn hl">isAlive</span><span class="p">(</span><span class="hl">instance</span><span class="p">)</span>
+	<span class="k">return</span> <span class="hl">instance</span><span class="p">:</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"Dead"</span><span class="p">)</span> <span class="p">~=</span> <span class="k">true</span> <span class="k">and</span> <span class="hl">instance</span><span class="p">.</span>Health <span class="p">&gt;</span> <span class="n">0</span>
+<span class="k">end</span>
+
+<span class="k">local</span> <span class="k">function</span> <span class="fn hl">spawnWave</span><span class="p">(</span><span class="hl">folder</span><span class="p">)</span>
+	<span class="k">if</span> <span class="fn">typeof</span><span class="p">(</span><span class="hl">spawnConfig</span><span class="p">)</span> <span class="p">~=</span> <span class="s">"table"</span> <span class="k">or</span> <span class="p">#</span><span class="hl">spawnConfig</span> <span class="p">==</span> <span class="n">0</span> <span class="k">then</span>
+		<span class="k">return</span>
+	<span class="k">end</span>
+	<span class="k">for</span> _<span class="p">,</span> <span class="hl">child</span> <span class="k">in</span> <span class="fn">ipairs</span><span class="p">(</span><span class="hl">folder</span><span class="p">:</span><span class="fn">GetChildren</span><span class="p">())</span> <span class="k">do</span>
+		<span class="k">if</span> <span class="hl">child</span><span class="p">:</span><span class="fn">IsA</span><span class="p">(</span><span class="s">"BasePart"</span><span class="p">)</span> <span class="k">then</span>
+			<span class="k">local</span> <span class="hl">clone</span> <span class="p">=</span> <span class="hl">child</span><span class="p">:</span><span class="fn">Clone</span><span class="p">()</span>
+			<span class="hl">clone</span><span class="p">.</span>Parent <span class="p">=</span> <span class="g">workspace</span>
+			<span class="hl">stats</span><span class="p">.</span>spawned <span class="p">+=</span> <span class="n">1</span>
+		<span class="k">end</span>
+	<span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">local</span> <span class="hl">connection</span> <span class="p">=</span> <span class="hl">RunService</span><span class="p">.</span>Heartbeat<span class="p">:</span><span class="fn">Connect</span><span class="p">(</span><span class="k">function</span><span class="p">(</span><span class="hl">dt</span><span class="p">)</span>
+	<span class="hl">stats</span><span class="p">.</span>elapsed <span class="p">+=</span> <span class="hl">dt</span>
+	<span class="k">if</span> <span class="fn hl">isAlive</span><span class="p">(</span><span class="hl">humanoid</span><span class="p">)</span> <span class="k">then</span> <span class="c">-- inlined by Luau -O2 (UNHOOKABLE)</span>
+		<span class="fn">print</span><span class="p">(</span><span class="s">`[Spawner] {stats.spawned} alive · {stats.elapsed}s`</span><span class="p">)</span>
+	<span class="k">end</span>
+<span class="k">end</span><span class="p">)</span></pre>
           </div>
-          <div class="lab" style="color:var(--acc)">named locals · preserved handles · structured flow</div>
+          <div class="lab" style="color:var(--acc)">names · recovered helper · += · loop + :IsA · backticks</div>
         </div>
       </div>
-      <p class="xform-note">Left: a representative example of typical raw-decompiler output. Right: real, unedited Tovek output.</p>
+      <p class="xform-note">An illustrative before → after — every transformation shown is a genuine Tovek pass. The demo further down is verbatim, unedited output.</p>
+      <div class="xform-feats"><span>name inference</span><span>service + require handles</span><span>-O2 de-inline</span><span>condition normalize</span><span>compound +=</span><span>:Clone → clone</span><span>loop + :IsA naming</span><span>table rebuild</span><span>backtick interpolation</span><span>event param dt</span></div>
     </div>
   </section>
 
@@ -507,38 +544,35 @@
       </div>
       <div class="demo-grid">
         <div class="demo-note">
-          <div class="row reveal"><span class="b">1</span><p><b>Services up top.</b> The dependency surface of the script is obvious at a glance.</p></div>
-          <div class="row reveal" style="--d:80ms"><span class="b">2</span><p><b>Honest comments.</b> Where the compiler inlined a definition, Tovek reconstructs it and marks the seam — nothing is silently invented.</p></div>
-          <div class="row reveal" style="--d:160ms"><span class="b">3</span><p><b>Readable names everywhere.</b> <code>placeId</code>, <code>afkConfig</code>, <code>localPlayer</code> — inferred from usage, not numbered.</p></div>
-          <div class="row reveal" style="--d:240ms"><span class="b">4</span><p><b>Structured control flow.</b> Guards, loops and conditionals recovered into the shape they were written in.</p></div>
+          <div class="row reveal"><span class="b">1</span><p><b>Services &amp; modules, named.</b> Every <code>GetService</code> and <code>require</code> handle is kept as one readable header local.</p></div>
+          <div class="row reveal" style="--d:80ms"><span class="b">2</span><p><b>Inferred from usage.</b> <code>localPlayer</code>, <code>bugModels</code>, <code>runtimeModelSanitizer</code> — names recovered from how each value is used.</p></div>
+          <div class="row reveal" style="--d:160ms"><span class="b">3</span><p><b>Tables rebuilt.</b> Field-by-field <code>t.x = …</code> bytecode is reassembled into a single table literal.</p></div>
+          <div class="row reveal" style="--d:240ms"><span class="b">4</span><p><b>Honest by default.</b> When a name cannot be inferred soundly, Tovek keeps a neutral <code>v</code> rather than guessing — nothing is invented.</p></div>
         </div>
         <div class="win reveal" style="--d:120ms">
-          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-name">AfkClient.client<span class="ext">.luau</span></span><span class="win-tag"><span class="blink"></span>tovek</span></div>
+          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-name">BugsReplicator.client<span class="ext">.luau</span></span><span class="win-tag"><span class="blink"></span>tovek</span></div>
 <pre><span class="k">local</span> <span class="hl">Players</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"Players"</span><span class="p">)</span>
 <span class="k">local</span> <span class="hl">ReplicatedStorage</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"ReplicatedStorage"</span><span class="p">)</span>
-<span class="k">local</span> <span class="hl">afkConfig</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="hl">ReplicatedStorage</span><span class="p">.</span>Shared<span class="p">.</span>Data<span class="p">.</span>AfkConfig<span class="p">)</span>
-<span class="c">--  [-O2 INLINED, UNHOOKABLE] reconstructed definition;</span>
-<span class="k">local function</span> <span class="fn">isAfkEnabled</span><span class="p">()</span>
-	<span class="k">local</span> <span class="hl">placeId</span> <span class="p">=</span> <span class="fn">tonumber</span><span class="p">(</span><span class="hl">afkConfig</span><span class="p">.</span>PlaceId<span class="p">)</span>
-	<span class="k">if</span> <span class="hl">afkConfig</span><span class="p">.</span>Enabled <span class="p">==</span> <span class="k">false</span> <span class="k">then</span>
-		<span class="k">return</span> <span class="k">false</span>
-	<span class="k">end</span>
-	<span class="k">if</span> <span class="hl">placeId</span> <span class="k">and</span> <span class="hl">placeId</span> <span class="p">&gt;</span> <span class="n">0</span> <span class="k">then</span>
-		<span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="hl">placeId</span>
-	<span class="k">else</span>
-		<span class="k">return</span> <span class="g">game</span><span class="p">.</span>PlaceId <span class="p">==</span> <span class="n">0</span>
-	<span class="k">end</span>
-<span class="k">end</span>
-<span class="c">--  [-O2 INLINED, UNHOOKABLE] reconstructed call</span>
-<span class="k">if</span> <span class="k">not</span> <span class="fn">isAfkEnabled</span><span class="p">()</span> <span class="k">then</span>
-	<span class="k">return</span>
-<span class="k">end</span>
-
+<span class="k">local</span> <span class="hl">RunService</span> <span class="p">=</span> <span class="g">game</span><span class="p">:</span><span class="fn">GetService</span><span class="p">(</span><span class="s">"RunService"</span><span class="p">)</span>
 <span class="k">local</span> <span class="hl">localPlayer</span> <span class="p">=</span> <span class="hl">Players</span><span class="p">.</span>LocalPlayer
-
-<span class="k">repeat</span>
-	<span class="g">task</span><span class="p">.</span><span class="fn">wait</span><span class="p">()</span>
-<span class="k">until</span> <span class="hl">localPlayer</span><span class="p">:</span><span class="fn">GetAttribute</span><span class="p">(</span><span class="s">"DataLoaded"</span><span class="p">)</span></pre>
+<span class="k">local</span> <span class="hl">bugModels</span> <span class="p">=</span> <span class="hl">ReplicatedStorage</span><span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"BugModels"</span><span class="p">)</span>
+<span class="k">local</span> <span class="hl">runtimeModelSanitizer</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="hl">ReplicatedStorage</span><span class="p">.</span>Shared<span class="p">.</span>Modules<span class="p">.</span>RuntimeModelSanitizer<span class="p">)</span>
+<span class="k">local</span> <span class="hl">clientPerformanceDebug</span> <span class="p">=</span> <span class="fn">require</span><span class="p">(</span><span class="g">script</span><span class="p">.</span>Parent<span class="p">.</span>Parent<span class="p">:</span><span class="fn">WaitForChild</span><span class="p">(</span><span class="s">"ClientPerformanceDebug"</span><span class="p">))</span>
+<span class="k">local</span> v <span class="p">=</span> <span class="p">{}</span>
+<span class="k">local</span> <span class="hl">result</span> <span class="p">=</span> <span class="p">{}</span>
+<span class="k">local</span> v2 <span class="p">=</span> <span class="k">false</span>
+<span class="k">local</span> <span class="hl">connection</span> <span class="p">=</span> <span class="k">nil</span>
+<span class="k">local</span> v3 <span class="p">=</span> <span class="k">false</span>
+<span class="k">local</span> v4 <span class="p">=</span> <span class="k">false</span>
+<span class="k">local</span> fn <span class="p">=</span> <span class="k">nil</span>
+<span class="k">local</span> v5 <span class="p">=</span> <span class="p">{</span>
+	activeOrbitRecords <span class="p">=</span> <span class="n">0</span><span class="p">,</span>
+	lastOrbitUpdates <span class="p">=</span> <span class="n">0</span><span class="p">,</span>
+	lastOrbitFailures <span class="p">=</span> <span class="n">0</span><span class="p">,</span>
+	orbitHeartbeatConnections <span class="p">=</span> <span class="n">0</span><span class="p">,</span>
+	monitorLoops <span class="p">=</span> <span class="n">0</span><span class="p">,</span>
+	monitorIterations <span class="p">=</span> <span class="n">0</span>
+<span class="p">}</span></pre>
         </div>
       </div>
     </div>
