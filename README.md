@@ -2,6 +2,8 @@
 
 **A high-readability, high-performance Luau decompiler.** `beta 0.1`
 
+[**💬 Join the Tovek Discord →**](https://discord.gg/phY6VUDSF7)
+
 Tovek is a fork of the [medal](https://github.com/Stefanuk12/medal-decompiler) Luau
 decompiler, rebuilt around a single goal: **output you can actually read.** Where most
 decompilers hand you a wall of `v1, v2, v3 …` and inlined compiler noise, Tovek
@@ -127,6 +129,12 @@ cargo +nightly-2024-12-15 build --release -p web-server -p luau-lifter
 The release profile is tuned for distribution: fat LTO, a single codegen unit, no debug
 info, and stripped symbols — maximum runtime speed and the smallest possible binary.
 Prebuilt binaries are attached to each [release](../../releases).
+
+---
+
+## Community
+
+Questions, bug reports, or want to follow development? **[Join the Tovek Discord](https://discord.gg/phY6VUDSF7).**
 
 ---
 
