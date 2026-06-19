@@ -242,7 +242,71 @@
   .js .reveal{opacity:0;transform:translateY(18px)}
   .reveal.in{opacity:1;transform:none}
   section[id],#top{scroll-margin-top:80px}
-  a:focus-visible,button:focus-visible,.btn:focus-visible,.cp:focus-visible,.dl:focus-visible{outline:2px solid var(--acc);outline-offset:3px;border-radius:8px}
+  a:focus-visible,button:focus-visible,select:focus-visible,.btn:focus-visible,.cp:focus-visible,.dl:focus-visible{outline:2px solid var(--acc);outline-offset:3px;border-radius:8px}
+
+  /* ---------- 4-way matrix ---------- */
+  table.quad{min-width:780px}
+  .quad td:first-child,.quad th:first-child{width:26%}
+  th.src,td.src{color:var(--gold)}
+  th.src{background:rgba(245,213,122,.06)}
+  td.src{color:#d9c489}
+  th.lx,td.lx{color:var(--faint)}
+  th.lx{background:rgba(255,255,255,.015)}
+  .quad td.tk{color:var(--text)}
+  .quad .yes{color:var(--acc);font-weight:600}
+  .quad .no{color:var(--rose)}
+  .quad code{font-family:var(--mono);font-size:.84em}
+  .ladder{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:38px}
+  .rung{border:1px solid var(--line);border-radius:var(--r);padding:18px 18px 20px;background:rgba(255,255,255,.012);position:relative}
+  .rung .step{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+  .rung h4{font-size:18px;font-weight:700;margin-top:10px;letter-spacing:-.01em}
+  .rung p{color:var(--muted);font-size:13px;margin-top:7px;line-height:1.5}
+  .rung.best{border-color:rgba(194,249,90,.4);background:linear-gradient(180deg,rgba(194,249,90,.06),rgba(255,255,255,.01));box-shadow:0 24px 50px -34px rgba(194,249,90,.5)}
+  .rung.best h4{color:var(--acc)}
+  .rung.src h4{color:var(--gold)}
+  .rung .bar{height:4px;border-radius:99px;margin-top:14px;background:var(--line-2)}
+  .rung:nth-child(1) .bar{width:18%;background:var(--rose)}
+  .rung:nth-child(2) .bar{width:42%;background:var(--coral)}
+  .rung:nth-child(3) .bar{width:66%;background:var(--cy)}
+  .rung:nth-child(4) .bar{width:100%;background:var(--acc);box-shadow:0 0 12px var(--acc)}
+
+  .rung code,.field-lede code,.cmp-cap code,.cmp-hint code{font-family:var(--mono);font-size:.85em;color:var(--coral);background:rgba(255,157,107,.10);padding:1px 5px;border-radius:5px}
+  .legend{display:flex;flex-wrap:wrap;justify-content:space-between;gap:14px;margin-top:18px;padding-top:16px;
+    border-top:1px solid var(--line);font-family:var(--mono);font-size:12px;color:var(--faint)}
+  .legend b{color:var(--muted)}
+
+  /* ---------- comparison picker ---------- */
+  .cmp{margin-top:36px}
+  .cmp-controls{display:flex;flex-wrap:wrap;gap:16px 24px;align-items:center;justify-content:space-between;margin-bottom:20px}
+  .cmp-pick{display:inline-flex;align-items:center;gap:11px;font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+  .cmp-pick select{font-family:var(--disp);font-size:14px;font-weight:500;color:var(--text);background:var(--ink-3);
+    border:1px solid var(--line-2);border-radius:10px;padding:10px 36px 10px 14px;cursor:pointer;
+    appearance:none;-webkit-appearance:none;text-transform:none;letter-spacing:0;max-width:min(72vw,440px);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b94a4' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 12px center;background-size:15px;transition:border-color .2s}
+  .cmp-pick select:hover{border-color:var(--acc)}
+  .cmp-seg{display:inline-flex;gap:4px;padding:4px;border:1px solid var(--line-2);border-radius:13px;background:rgba(0,0,0,.28);flex-wrap:wrap}
+  .cmp-seg-btn{font-family:var(--mono);font-size:12.5px;color:var(--muted);background:transparent;border:0;
+    border-radius:9px;padding:9px 14px;cursor:pointer;transition:.16s;white-space:nowrap}
+  .cmp-seg-btn:hover{color:var(--text)}
+  .cmp-seg-btn.on{background:var(--acc);color:#0a0d05;font-weight:600}
+  .cmp-seg-btn[data-dec="luaexpert"].on{background:var(--rose);color:#1c0707}
+  .cmp-seg-btn[data-dec="medal"].on{background:var(--gold);color:#1c1503}
+  .cmp-seg-btn[data-dec="source"].on{background:var(--cy);color:#04181a}
+  .cmp-cap{font-size:15px;color:var(--muted);line-height:1.55;margin-bottom:16px;min-height:4.4em}
+  .cmp-cap b{color:var(--text);font-weight:600}
+  .cmp-win{border-radius:var(--r)}
+  .cmp-codes{min-height:330px}
+  .cmp-pre{margin:0}
+  .cmp-pre[hidden]{display:none}
+  .cmp-win .win-tag.t-riv{color:var(--rose);border-color:rgba(255,142,142,.35)}
+  .cmp-win .win-tag.t-riv .blink{background:var(--rose);box-shadow:0 0 7px var(--rose);animation:none}
+  .cmp-win .win-tag.t-med{color:var(--gold);border-color:rgba(245,213,122,.35)}
+  .cmp-win .win-tag.t-med .blink{background:var(--gold);box-shadow:0 0 7px var(--gold);animation:none}
+  .cmp-win .win-tag.t-src{color:var(--cy);border-color:rgba(95,221,230,.35)}
+  .cmp-win .win-tag.t-src .blink{background:var(--cy);box-shadow:0 0 7px var(--cy);animation:none}
+  .cmp-hint{font-family:var(--mono);font-size:12px;color:var(--faint);margin-top:15px;line-height:1.7}
+  .cmp-hint b{color:var(--muted)}
 
   /* ---------- responsive ---------- */
   @media(max-width:1024px){
@@ -262,8 +326,15 @@
     .xform{grid-template-columns:1fr}
     .xform .arrow{padding:16px 0}
     .xform .arrow .ring{transform:rotate(90deg)}
+    .ladder{grid-template-columns:repeat(2,1fr)}
+    .vs{grid-template-columns:1fr}
+    .wins{grid-template-columns:1fr}
+    .cmp-controls{align-items:flex-start;flex-direction:column;gap:14px}
+    .cmp-pick{flex-direction:column;align-items:flex-start;gap:7px}
+    .cmp-pick select{max-width:100%}
   }
   @media(max-width:680px){
+    .ladder{grid-template-columns:1fr}
     .nav-links{display:none}
     .nav-cta .btn-ghost{display:none}
     .feat-grid{grid-template-columns:1fr}
@@ -291,7 +362,8 @@
       <a href="#transform">Transform</a>
       <a href="#features">Features</a>
       <a href="#demo">Demo</a>
-      <a href="#compare">vs medal</a>
+      <a href="#duel">Compare</a>
+      <a href="#compare">The field</a>
       <a href="#start">Get started</a>
     </nav>
     <div class="nav-cta">
@@ -580,30 +652,906 @@
     </div>
   </section>
 
-  <!-- COMPARE -->
-  <section id="compare">
+  <!-- COMPARE: pick a decompiler -->
+  <section id="duel">
     <div class="wrap">
       <div class="sec-head reveal">
-        <span class="eyebrow">// tovek vs upstream medal</span>
-        <h2>Same correctness. Far better output.</h2>
+        <span class="eyebrow">// same code, four decompilers</span>
+        <h2>Pick a decompiler. Watch the code change.</h2>
+        <p class="field-lede">The same script, run through every option that matters, lined up against the source a human actually wrote. <b style="color:var(--text)">lua.expert</b> is the strongest <i>free</i> decompiler there is — so switch to it and back, and read the difference yourself. Every panel is real, unedited output.</p>
       </div>
-      <div class="tablewrap reveal">
-        <table>
-          <thead><tr><th></th><th>medal</th><th class="tk">Tovek</th></tr></thead>
-          <tbody>
-            <tr><td>Local &amp; parameter names</td><td class="medal"><code>v1, v2, v3 …</code></td><td class="tk">Inferred — <code>player, connection, track, color …</code></td></tr>
-            <tr><td>Service / module handles</td><td class="medal">inlined at every call site</td><td class="tk">preserved once as a named header local</td></tr>
-            <tr><td>OOP methods</td><td class="medal"><code>function T.m(self, …)</code></td><td class="tk"><code>function T:m(…)</code> with real <code>self</code></td></tr>
-            <tr><td>Luau <code>-O2</code> inlining</td><td class="medal">left inlined</td><td class="tk">de-inlined &amp; reassembled</td></tr>
-            <tr><td>Compound assignment</td><td class="medal"><code>x = x + 1</code></td><td class="tk"><code>x += 1</code> (incl. indexed)</td></tr>
-            <tr><td>Strings</td><td class="medal"><code>string.format("%*", …)</code></td><td class="tk">backtick interpolation</td></tr>
-            <tr><td>Speed</td><td class="medal">baseline</td><td class="tk">~2× single file · up to 32× on a corpus</td></tr>
-            <tr><td>Determinism</td><td class="medal">thread-order dependent</td><td class="tk">byte-identical, reproducible</td></tr>
-          </tbody>
-        </table>
+
+      <div class="cmp reveal" id="cmp">
+        <div class="cmp-controls">
+          <label class="cmp-pick" for="cmpEx"><span>Example</span>
+            <select id="cmpEx" aria-label="Choose an example script">
+            <option value="0">Smart names + no dead stores · InitNpcQuest</option>
+            <option value="1">Un-inlines the optimizer · ShovelHighlight</option>
+            <option value="2">Reverses inlined guards · AfkClient</option>
+            <option value="3">math.huge, not (1 / 0) · ChatTipsClient</option>
+            <option value="4">Catches what lua.expert gets wrong · ChatTipsClient</option>
+            <option value="5">Recovers real methods · collision</option>
+            <option value="6">Tiny module, byte-for-byte · Sounds</option>
+            <option value="7">math.pi, not a raw float · Fertilizer</option>
+            <option value="8">Even the tiny ones · getMouseCF</option>
+            <option value="9">Rebuilds React tables · DetailButton</option>
+            </select>
+          </label>
+          <div class="cmp-seg" aria-label="Choose a decompiler">
+            <button type="button" class="cmp-seg-btn" data-dec="source" aria-pressed="false">Source</button>
+            <button type="button" class="cmp-seg-btn" data-dec="medal" aria-pressed="false">medal</button>
+            <button type="button" class="cmp-seg-btn" data-dec="luaexpert" aria-pressed="false">lua.expert</button>
+            <button type="button" class="cmp-seg-btn on" data-dec="tovek" aria-pressed="true">Tovek</button>
+          </div>
+        </div>
+
+        <p class="cmp-cap" id="cmpCap">The compiler inlined <code>getMainGui</code>. <b>Tovek</b> names the result <code>main</code> (from <code>FindFirstChild("Main")</code>) and drops the dead stores. <b style="color:var(--rose)">lua.expert</b> and <b style="color:var(--gold)">medal</b> leave it <code>v1</code>/<code>v35</code> and write <code>= nil</code> in two branches where it is <i>already</i> nil.</p>
+
+        <div class="win cmp-win">
+          <div class="win-bar">
+            <span class="dots"><i></i><i></i><i></i></span>
+            <span class="win-name" id="cmpTitle">InitNpcQuest.client.luau</span>
+            <span class="win-tag" id="cmpTag"><span class="blink"></span><span id="cmpTagText">tovek</span></span>
+          </div>
+          <div class="cmp-codes">
+            <pre class="sm cmp-pre" data-ex="0" data-dec="source" hidden><span class="k">local</span> <span class="k">function</span> getMainGui(): ScreenGui?
+	<span class="k">local</span> localPlayer = <span class="g">Players</span>.LocalPlayer
+	<span class="k">if</span> <span class="k">not</span> localPlayer <span class="k">then</span>
+		<span class="k">return</span> <span class="k">nil</span>
+	<span class="k">end</span>
+
+	<span class="k">local</span> playerGui = localPlayer:FindFirstChild(<span class="s">"PlayerGui"</span>)
+	<span class="k">if</span> <span class="k">not</span> playerGui <span class="k">then</span>
+		<span class="k">return</span> <span class="k">nil</span>
+	<span class="k">end</span>
+
+	<span class="k">local</span> mainGui = playerGui:FindFirstChild(<span class="s">"Main"</span>)
+	<span class="k">if</span> mainGui <span class="k">and</span> mainGui:IsA(<span class="s">"ScreenGui"</span>) <span class="k">then</span>
+		<span class="k">return</span> mainGui
+	<span class="k">end</span>
+
+	<span class="k">return</span> <span class="k">nil</span>
+<span class="k">end</span></pre>
+            <pre class="sm cmp-pre" data-ex="0" data-dec="medal" hidden>			<span class="k">local</span> v34 = v_u_2.LocalPlayer
+			<span class="k">local</span> v35
+			<span class="k">if</span> v34 <span class="k">then</span>
+				<span class="k">local</span> v36 = v34:FindFirstChild(<span class="s">"PlayerGui"</span>)
+				<span class="k">if</span> v36 <span class="k">then</span>
+					v35 = v36:FindFirstChild(<span class="s">"Main"</span>)
+					<span class="k">if</span> <span class="k">not</span> (v35 <span class="k">and</span> v35:IsA(<span class="s">"ScreenGui"</span>)) <span class="k">then</span>
+						v35 = <span class="k">nil</span>
+					<span class="k">end</span>
+				<span class="k">else</span>
+					v35 = <span class="k">nil</span></pre>
+            <pre class="sm cmp-pre" data-ex="0" data-dec="luaexpert" hidden>	<span class="k">local</span> LocalPlayer = <span class="g">Players</span>.LocalPlayer
+	<span class="k">local</span> v1
+
+	<span class="k">if</span> LocalPlayer <span class="k">then</span>
+		<span class="k">local</span> PlayerGui = LocalPlayer:FindFirstChild(<span class="s">"PlayerGui"</span>)
+
+		<span class="k">if</span> PlayerGui <span class="k">then</span>
+			<span class="k">local</span> Main = PlayerGui:FindFirstChild(<span class="s">"Main"</span>)
+
+			v1 = <span class="k">if</span> Main <span class="k">and</span> Main:IsA(<span class="s">"ScreenGui"</span>) <span class="k">then</span> Main <span class="k">else</span> <span class="k">nil</span>
+		<span class="k">else</span>
+			v1 = <span class="k">nil</span>
+		<span class="k">end</span>
+	<span class="k">else</span>
+		v1 = <span class="k">nil</span>
+	<span class="k">end</span>
+
+	<span class="k">local</span> LocalPlayer2 = <span class="g">Players</span>.LocalPlayer
+
+	<span class="k">if</span> <span class="k">not</span> (v1 <span class="k">and</span> LocalPlayer2) <span class="k">then</span>
+		<span class="g">warn</span>(<span class="s">"[InitNpcQuest] Main UI is not ready for AdhesiveCrafting"</span>)
+</pre>
+            <pre class="sm cmp-pre" data-ex="0" data-dec="tovek">	<span class="k">local</span> localPlayer = <span class="g">Players</span>.LocalPlayer
+	<span class="k">local</span> main
+
+	<span class="k">if</span> localPlayer <span class="k">then</span>
+		<span class="k">local</span> playerGui = localPlayer:FindFirstChild(<span class="s">"PlayerGui"</span>)
+
+		<span class="k">if</span> playerGui <span class="k">then</span>
+			main = playerGui:FindFirstChild(<span class="s">"Main"</span>)
+
+			<span class="k">if</span> <span class="k">not</span> (main <span class="k">and</span> main:IsA(<span class="s">"ScreenGui"</span>)) <span class="k">then</span>
+				main = <span class="k">nil</span>
+			<span class="k">end</span>
+		<span class="k">end</span>
+	<span class="k">end</span>
+
+	<span class="k">local</span> localPlayer2 = <span class="g">Players</span>.LocalPlayer
+
+	<span class="k">if</span> <span class="k">not</span> (main <span class="k">and</span> localPlayer2) <span class="k">then</span>
+		<span class="g">warn</span>(<span class="s">"[InitNpcQuest] Main UI is not ready for AdhesiveCrafting"</span>)
+		<span class="k">return</span> <span class="k">false</span></pre>
+            <pre class="sm cmp-pre" data-ex="1" data-dec="source" hidden><span class="k">local</span> <span class="k">function</span> updateTarget(<span class="g">self</span>, localPlayer: Player)
+	<span class="k">if</span> <span class="k">not</span> <span class="g">self</span>._equippedShovelType <span class="k">then</span>
+		clearHighlight(<span class="g">self</span>)
+		<span class="k">return</span>
+	<span class="k">end</span>
+
+	<span class="k">local</span> actionName = <span class="k">if</span> <span class="g">self</span>._equippedShovelType == <span class="s">"PlantShovel"</span> <span class="k">then</span> <span class="s">"PlantShovel"</span> <span class="k">else</span> <span class="s">"PotShovel"</span>
+	<span class="k">local</span> candidate = InteractionTargeting.ResolveActionTarget(localPlayer, actionName, {
+		fallbackRadius = <span class="n">84</span>,
+	})
+
+	<span class="k">if</span> <span class="k">not</span> candidate <span class="k">then</span>
+		clearHighlight(<span class="g">self</span>)
+		<span class="k">return</span>
+	<span class="k">end</span>
+
+	<span class="k">local</span> highlightModel = findHighlightableModel(candidate.clientRoot)
+	<span class="k">if</span> <span class="k">not</span> highlightModel <span class="k">then</span>
+		clearHighlight(<span class="g">self</span>)
+		<span class="k">return</span>
+	<span class="k">end</span>
+
+	<span class="k">if</span> <span class="g">self</span>._lastTarget ~= highlightModel <span class="k">then</span>
+		clearHighlight(<span class="g">self</span>)</pre>
+            <pre class="sm cmp-pre" data-ex="1" data-dec="medal" hidden>	<span class="k">end</span>
+	<span class="k">return</span> <span class="k">nil</span>
+<span class="k">end</span>
+<span class="k">local</span> <span class="k">function</span> v_u_14(p8, p9)
+	<span class="c">-- upvalues: (copy) v_u_2, (copy) v_u_7, (copy) v_u_4</span>
+	<span class="k">if</span> p8._equippedShovelType <span class="k">then</span>
+		<span class="k">local</span> v10 = p8._equippedShovelType == <span class="s">"PlantShovel"</span> <span class="k">and</span> <span class="s">"PlantShovel"</span> <span class="k">or</span> <span class="s">"PotShovel"</span>
+		<span class="k">local</span> v11 = v_u_2.ResolveActionTarget(p9, v10, {
+			[<span class="s">"fallbackRadius"</span>] = <span class="n">84</span>
+		})
+		<span class="k">if</span> v11 <span class="k">then</span>
+			<span class="k">local</span> v12 = v_u_7(v11.clientRoot)
+			<span class="k">if</span> v12 <span class="k">then</span>
+				<span class="k">if</span> p8._lastTarget ~= v12 <span class="k">then</span>
+					<span class="k">if</span> p8._currentHighlight <span class="k">then</span>
+						p8._currentHighlight:Destroy()
+						p8._currentHighlight = <span class="k">nil</span>
+					<span class="k">end</span>
+					p8._lastTarget = <span class="k">nil</span>
+					<span class="k">local</span> v13 = <span class="g">Instance</span>.new(<span class="s">"Highlight"</span>)
+					v13.Name = <span class="s">"ShovelHoverHighlight"</span>
+					v13.FillColor = v_u_4
+					v13.OutlineColor = v_u_4
+					v13.FillTransparency = <span class="n">0.5</span>
+					v13.OutlineTransparency = <span class="n">0</span>
+					v13.DepthMode = <span class="g">Enum</span>.HighlightDepthMode.AlwaysOnTop
+					v13.Adornee = v12
+					v13.Parent = v12</pre>
+            <pre class="sm cmp-pre" data-ex="1" data-dec="luaexpert" hidden>	<span class="k">else</span>
+		p1._equippedShovelType = <span class="k">nil</span>
+	<span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">local</span> <span class="k">function</span> updateTarget(p1, p2) <span class="c">--[[ updateTarget | Line: 88 | Upvalues: InteractionTargeting (copy), findHighlightableModel (copy), v1 (copy) ]]</span>
+	<span class="k">if</span> p1._equippedShovelType <span class="k">then</span>
+		<span class="k">local</span> v2 = InteractionTargeting.ResolveActionTarget(p2, <span class="k">if</span> p1._equippedShovelType == <span class="s">"PlantShovel"</span> <span class="k">then</span> <span class="s">"PlantShovel"</span> <span class="k">else</span> <span class="s">"PotShovel"</span>, {
+			fallbackRadius = <span class="n">84</span>
+		})
+
+		<span class="k">if</span> v2 <span class="k">then</span>
+			<span class="k">local</span> v3 = findHighlightableModel(v2.clientRoot)
+
+			<span class="k">if</span> v3 <span class="k">then</span>
+				<span class="k">if</span> p1._lastTarget == v3 <span class="k">then</span>
+					<span class="k">return</span>
+				<span class="k">end</span>
+
+				<span class="k">if</span> p1._currentHighlight <span class="k">then</span>
+					p1._currentHighlight:Destroy()
+					p1._currentHighlight = <span class="k">nil</span>
+				<span class="k">end</span>
+
+				p1._lastTarget = <span class="k">nil</span>
+
+				<span class="k">local</span> ShovelHoverHighlight = <span class="g">Instance</span>.new(<span class="s">"Highlight"</span>)
+
+				ShovelHoverHighlight.Name = <span class="s">"ShovelHoverHighlight"</span>
+				ShovelHoverHighlight.FillColor = v1
+				ShovelHoverHighlight.OutlineColor = v1
+				ShovelHoverHighlight.FillTransparency = <span class="n">0.5</span>
+				ShovelHoverHighlight.OutlineTransparency = <span class="n">0</span>
+				ShovelHoverHighlight.DepthMode = <span class="g">Enum</span>.HighlightDepthMode.AlwaysOnTop</pre>
+            <pre class="sm cmp-pre" data-ex="1" data-dec="tovek" hidden>
+<span class="k">local</span> <span class="k">function</span> updateTarget(p, p2)
+	<span class="k">if</span> <span class="k">not</span> p._equippedShovelType <span class="k">then</span>
+		clearHighlight(p) <span class="c">-- inlined by Luau -O2 (UNHOOKABLE)</span>
+		<span class="k">return</span>
+	<span class="k">end</span>
+
+	<span class="k">local</span> v = interactionTargeting.ResolveActionTarget(p2, p._equippedShovelType == <span class="s">"PlantShovel"</span> <span class="k">and</span> <span class="s">"PlantShovel"</span> <span class="k">or</span> <span class="s">"PotShovel"</span>, {
+		fallbackRadius = <span class="n">84</span>
+	})
+
+	<span class="k">if</span> <span class="k">not</span> v <span class="k">then</span>
+		clearHighlight(p) <span class="c">-- inlined by Luau -O2 (UNHOOKABLE)</span>
+		<span class="k">return</span>
+	<span class="k">end</span>
+
+	<span class="k">local</span> v2 = findHighlightableModel(v.clientRoot)
+
+	<span class="k">if</span> <span class="k">not</span> v2 <span class="k">then</span>
+		clearHighlight(p) <span class="c">-- inlined by Luau -O2 (UNHOOKABLE)</span>
+		<span class="k">return</span>
+	<span class="k">end</span>
+
+	<span class="k">if</span> p._lastTarget ~= v2 <span class="k">then</span>
+		clearHighlight(p) <span class="c">-- inlined by Luau -O2 (UNHOOKABLE)</span>
+		<span class="k">local</span> highlight = <span class="g">Instance</span>.new(<span class="s">"Highlight"</span>)</pre>
+            <pre class="sm cmp-pre" data-ex="2" data-dec="source" hidden><span class="k">local</span> <span class="g">Players</span> = <span class="g">game</span>:GetService(<span class="s">"Players"</span>)
+<span class="k">local</span> <span class="g">ReplicatedStorage</span> = <span class="g">game</span>:GetService(<span class="s">"ReplicatedStorage"</span>)
+
+<span class="k">local</span> AfkConfig = <span class="g">require</span>(<span class="g">ReplicatedStorage</span>.Shared.Data.AfkConfig)
+
+<span class="k">local</span> <span class="k">function</span> isAfkEnabled(): boolean
+	<span class="k">local</span> placeId = <span class="g">tonumber</span>(AfkConfig.PlaceId)
+	<span class="k">if</span> AfkConfig.Enabled == <span class="k">false</span> <span class="k">then</span>
+		<span class="k">return</span> <span class="k">false</span>
+	<span class="k">end</span>
+	<span class="k">if</span> <span class="k">not</span> placeId <span class="k">or</span> placeId &lt;= <span class="n">0</span> <span class="k">then</span>
+		<span class="k">return</span> <span class="g">game</span>.PlaceId == <span class="n">0</span>
+	<span class="k">end</span>
+	<span class="k">return</span> <span class="g">game</span>.PlaceId == placeId
+<span class="k">end</span>
+
+<span class="k">if</span> <span class="k">not</span> isAfkEnabled() <span class="k">then</span>
+	<span class="k">return</span>
+<span class="k">end</span>
+</pre>
+            <pre class="sm cmp-pre" data-ex="2" data-dec="medal" hidden><span class="k">local</span> v1 = <span class="g">game</span>:GetService(<span class="s">"Players"</span>)
+<span class="k">local</span> v2 = <span class="g">game</span>:GetService(<span class="s">"ReplicatedStorage"</span>)
+<span class="k">local</span> v3 = <span class="g">require</span>(v2.Shared.Data.AfkConfig)
+<span class="k">local</span> v4 = v3.PlaceId
+<span class="k">local</span> v5 = <span class="g">tonumber</span>(v4)
+<span class="k">local</span> v6
+<span class="k">if</span> v3.Enabled == <span class="k">false</span> <span class="k">then</span>
+	v6 = <span class="k">false</span>
+<span class="k">elseif</span> v5 <span class="k">and</span> v5 &gt; <span class="n">0</span> <span class="k">then</span>
+	v6 = <span class="g">game</span>.PlaceId == v5
+<span class="k">else</span>
+	v6 = <span class="g">game</span>.PlaceId == <span class="n">0</span>
+<span class="k">end</span>
+<span class="k">if</span> v6 <span class="k">then</span></pre>
+            <pre class="sm cmp-pre" data-ex="2" data-dec="luaexpert" hidden><span class="k">local</span> <span class="g">Players</span> = <span class="g">game</span>:GetService(<span class="s">"Players"</span>)
+<span class="k">local</span> <span class="g">ReplicatedStorage</span> = <span class="g">game</span>:GetService(<span class="s">"ReplicatedStorage"</span>)
+<span class="k">local</span> AfkConfig = <span class="g">require</span>(<span class="g">ReplicatedStorage</span>.Shared.Data.AfkConfig)
+
+<span class="k">local</span> <span class="k">function</span> isAfkEnabled() <span class="c">--[[ isAfkEnabled | Line: 6 | Upvalues: AfkConfig (copy) ]]</span>
+	<span class="k">local</span> v1 = <span class="g">tonumber</span>(AfkConfig.PlaceId)
+
+	<span class="k">if</span> AfkConfig.Enabled == <span class="k">false</span> <span class="k">then</span>
+		<span class="k">return</span> <span class="k">false</span>
+	<span class="k">end</span>
+
+	<span class="k">if</span> v1 <span class="k">and</span> <span class="k">not</span> (v1 &lt;= <span class="n">0</span>) <span class="k">then</span>
+		<span class="k">return</span> <span class="g">game</span>.PlaceId == v1
+	<span class="k">end</span>
+
+	<span class="k">return</span> <span class="g">game</span>.PlaceId == <span class="n">0</span>
+<span class="k">end</span>
+
+<span class="k">local</span> v1 = <span class="g">tonumber</span>(AfkConfig.PlaceId)
+
+<span class="k">if</span> <span class="k">not</span> (<span class="k">if</span> AfkConfig.Enabled == <span class="k">false</span> <span class="k">then</span> <span class="k">false</span> <span class="k">elseif</span> v1 <span class="k">and</span> <span class="k">not</span> (v1 &lt;= <span class="n">0</span>) <span class="k">then</span> <span class="k">if</span> <span class="g">game</span>.PlaceId == v1 <span class="k">then</span> <span class="k">true</span> <span class="k">else</span> <span class="k">false</span> <span class="k">elseif</span> <span class="g">game</span>.PlaceId == <span class="n">0</span> <span class="k">then</span> <span class="k">true</span> <span class="k">else</span> <span class="k">false</span>) <span class="k">then</span>
+	<span class="k">return</span>
+<span class="k">end</span>
+
+<span class="k">local</span> LocalPlayer = <span class="g">Players</span>.LocalPlayer</pre>
+            <pre class="sm cmp-pre" data-ex="2" data-dec="tovek" hidden><span class="k">local</span> <span class="g">Players</span> = <span class="g">game</span>:GetService(<span class="s">"Players"</span>)
+<span class="k">local</span> <span class="g">ReplicatedStorage</span> = <span class="g">game</span>:GetService(<span class="s">"ReplicatedStorage"</span>)
+<span class="k">local</span> afkConfig = <span class="g">require</span>(<span class="g">ReplicatedStorage</span>.Shared.Data.AfkConfig)
+<span class="c">--  [-O2 INLINED, UNHOOKABLE] reconstructed definition;</span>
+<span class="k">local</span> <span class="k">function</span> isAfkEnabled()
+	<span class="k">local</span> placeId = <span class="g">tonumber</span>(afkConfig.PlaceId)
+
+	<span class="k">if</span> afkConfig.Enabled == <span class="k">false</span> <span class="k">then</span>
+		<span class="k">return</span> <span class="k">false</span>
+	<span class="k">end</span>
+
+	<span class="k">if</span> placeId <span class="k">and</span> placeId &gt; <span class="n">0</span> <span class="k">then</span>
+		<span class="k">return</span> <span class="g">game</span>.PlaceId == placeId
+	<span class="k">else</span>
+		<span class="k">return</span> <span class="g">game</span>.PlaceId == <span class="n">0</span>
+	<span class="k">end</span>
+<span class="k">end</span>
+<span class="c">--  [-O2 INLINED, UNHOOKABLE] reconstructed call</span>
+<span class="k">if</span> <span class="k">not</span> isAfkEnabled() <span class="k">then</span>
+	<span class="k">return</span>
+<span class="k">end</span>
+</pre>
+            <pre class="sm cmp-pre" data-ex="3" data-dec="source" hidden><span class="k">local</span> <span class="k">function</span> isFiniteNumber(value: any): boolean
+	<span class="k">return</span> <span class="g">typeof</span>(value) == <span class="s">"number"</span> <span class="k">and</span> value == value <span class="k">and</span> value &gt; -<span class="g">math</span>.huge <span class="k">and</span> value &lt; <span class="g">math</span>.huge
+<span class="k">end</span></pre>
+            <pre class="sm cmp-pre" data-ex="3" data-dec="medal" hidden>	<span class="k">if</span> <span class="g">typeof</span>(v27) == <span class="s">"number"</span> <span class="k">and</span> (v27 == v27 <span class="k">and</span> v27 &gt; (-<span class="n">1</span> / <span class="n">0</span>)) <span class="k">then</span>
+		v28 = v27 &lt; (<span class="n">1</span> / <span class="n">0</span>)</pre>
+            <pre class="sm cmp-pre" data-ex="3" data-dec="luaexpert" hidden><span class="k">local</span> <span class="k">function</span> isFiniteNumber(p1) <span class="c">--[[ isFiniteNumber | Line: 51 ]]</span>
+	<span class="k">return</span> <span class="k">if</span> <span class="g">typeof</span>(p1) == <span class="s">"number"</span> <span class="k">and</span> (p1 == p1 <span class="k">and</span> p1 &gt; (-<span class="n">1</span> / <span class="n">0</span>)) <span class="k">then</span> p1 &lt; (<span class="n">1</span> / <span class="n">0</span>) <span class="k">else</span> <span class="k">false</span>
+<span class="k">end</span></pre>
+            <pre class="sm cmp-pre" data-ex="3" data-dec="tovek" hidden><span class="k">local</span> <span class="k">function</span> isFiniteNumber(value)
+	<span class="k">return</span> <span class="g">typeof</span>(value) == <span class="s">"number"</span> <span class="k">and</span> value == value <span class="k">and</span> value &gt; -<span class="g">math</span>.huge <span class="k">and</span> value &lt; <span class="g">math</span>.huge
+<span class="k">end</span></pre>
+            <pre class="sm cmp-pre" data-ex="4" data-dec="source" hidden><span class="k">local</span> <span class="k">function</span> waitForDelay(runId: number, seconds: number): boolean
+	<span class="k">local</span> startedVersion = ChatTipsClient._configVersion
+	<span class="k">local</span> deadline = <span class="g">os</span>.clock() + seconds
+	<span class="k">while</span> ChatTipsClient._runId == runId <span class="k">and</span> ChatTipsClient._configVersion == startedVersion <span class="k">do</span>
+		<span class="k">local</span> remaining = deadline - <span class="g">os</span>.clock()
+		<span class="k">if</span> remaining &lt;= <span class="n">0</span> <span class="k">then</span>
+			<span class="k">return</span> <span class="k">true</span>
+		<span class="k">end</span>
+		<span class="g">task</span>.wait(<span class="g">math</span>.min(remaining, <span class="n">1</span>))
+	<span class="k">end</span>
+
+	<span class="k">return</span> <span class="k">false</span>
+<span class="k">end</span>
+
+<span class="k">local</span> <span class="k">function</span> chooseTip(tips: { ChatTip }): ChatTip?</pre>
+            <pre class="sm cmp-pre" data-ex="4" data-dec="medal" hidden>	<span class="c">-- upvalues: (copy) v_u_6</span>
+	<span class="k">local</span> v54 = v_u_6._configVersion
+	<span class="k">local</span> v55 = <span class="g">os</span>.clock() + p53
+	<span class="k">while</span> v_u_6._runId == p52 <span class="k">and</span> v_u_6._configVersion == v54 <span class="k">do</span>
+		<span class="k">local</span> v56 = v55 - <span class="g">os</span>.clock()
+		<span class="k">if</span> v56 &lt;= <span class="n">0</span> <span class="k">then</span>
+			<span class="k">return</span> <span class="k">true</span>
+		<span class="k">end</span>
+		<span class="g">task</span>.wait((<span class="g">math</span>.min(v56, <span class="n">1</span>)))
+	<span class="k">end</span>
+	<span class="k">return</span> <span class="k">false</span>
+<span class="k">end</span>
+<span class="k">local</span> <span class="k">function</span> v_u_69(p58)
+	<span class="c">-- upvalues: (copy) v_u_6, (copy) v_u_38, (copy) v_u_57, (copy) v_u_51, (copy) v_u_2</span>
+	<span class="k">while</span> v_u_6._runId == p58 <span class="k">do</span></pre>
+            <pre class="sm cmp-pre" data-ex="4" data-dec="luaexpert" hidden>
+<span class="k">local</span> <span class="k">function</span> waitForDelay(p1, p2) <span class="c">--[[ waitForDelay | Line: 202 | Upvalues: t (copy) ]]</span>
+	<span class="k">local</span> v1 = <span class="g">os</span>.clock() + p2
+
+	<span class="k">while</span> t._runId == p1 <span class="k">and</span> t._configVersion == t._configVersion <span class="k">do</span>
+		<span class="k">local</span> v2 = v1 - <span class="g">os</span>.clock()
+
+		<span class="k">if</span> v2 &lt;= <span class="n">0</span> <span class="k">then</span>
+			<span class="k">return</span> <span class="k">true</span>
+		<span class="k">end</span>
+
+		<span class="g">task</span>.wait((<span class="g">math</span>.min(v2, <span class="n">1</span>)))
+	<span class="k">end</span>
+
+	<span class="k">return</span> <span class="k">false</span></pre>
+            <pre class="sm cmp-pre" data-ex="4" data-dec="tovek" hidden><span class="k">local</span> <span class="k">function</span> waitForDelay(p, p2)
+	<span class="k">local</span> _configVersion = ChatTipsClient._configVersion
+	<span class="k">local</span> v = <span class="g">os</span>.clock() + p2
+
+	<span class="k">while</span> ChatTipsClient._runId == p <span class="k">and</span> ChatTipsClient._configVersion == _configVersion <span class="k">do</span>
+		<span class="k">local</span> v2 = v - <span class="g">os</span>.clock()
+
+		<span class="k">if</span> v2 &lt;= <span class="n">0</span> <span class="k">then</span>
+			<span class="k">return</span> <span class="k">true</span>
+		<span class="k">end</span>
+
+		<span class="g">task</span>.wait((<span class="g">math</span>.min(v2, <span class="n">1</span>)))
+	<span class="k">end</span>
+
+	<span class="k">return</span> <span class="k">false</span></pre>
+            <pre class="sm cmp-pre" data-ex="5" data-dec="source" hidden><span class="k">local</span> <span class="g">Workspace</span> = <span class="g">game</span>:GetService(<span class="s">"Workspace"</span>)
+
+<span class="k">local</span> Collision = {}
+
+<span class="k">local</span> TargetFolders = {
+	<span class="g">Workspace</span>:WaitForChild(<span class="s">"World"</span>):WaitForChild(<span class="s">"PlantedSeeds"</span>),
+	<span class="g">Workspace</span>:WaitForChild(<span class="s">"World"</span>):WaitForChild(<span class="s">"PlacedPots"</span>),
+	<span class="g">Workspace</span>:WaitForChild(<span class="s">"World"</span>):WaitForChild(<span class="s">"PlacedHangingItems"</span>),
+}
+
+<span class="c">-- Check if a BasePart belongs to a cloud model (should keep CanCollide = true)</span>
+<span class="k">local</span> <span class="k">function</span> isCloudPart(part: BasePart): boolean
+	<span class="k">local</span> parent = part.Parent
+	<span class="k">while</span> parent <span class="k">do</span>
+		<span class="k">if</span> parent:IsA(<span class="s">"Model"</span>) <span class="k">and</span> parent.Name == <span class="s">"Cloud"</span> <span class="k">then</span>
+			<span class="k">return</span> <span class="k">true</span>
+		<span class="k">end</span>
+		parent = parent.Parent
+	<span class="k">end</span>
+	<span class="k">return</span> <span class="k">false</span>
+<span class="k">end</span>
+
+<span class="k">function</span> Collision:DisableCollision(folder)
+	<span class="k">for</span> _, obj <span class="k">in</span> folder:GetDescendants() <span class="k">do</span>
+		<span class="k">if</span> obj:IsA(<span class="s">"BasePart"</span>) <span class="k">and</span> <span class="k">not</span> isCloudPart(obj) <span class="k">then</span>
+			obj.CanCollide = <span class="k">false</span>
+		<span class="k">end</span>
+	<span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">for</span> _, folder <span class="k">in</span> TargetFolders <span class="k">do</span>
+	<span class="c">-- Initial pass</span>
+	Collision:DisableCollision(folder)
+
+	<span class="c">-- When new parts are added</span>
+	folder.DescendantAdded:Connect(<span class="k">function</span>(descendant)
+		<span class="k">if</span> descendant:IsA(<span class="s">"BasePart"</span>) <span class="k">and</span> <span class="k">not</span> isCloudPart(descendant) <span class="k">then</span>
+			descendant.CanCollide = <span class="k">false</span>
+		<span class="k">end</span>
+	<span class="k">end</span>)
+<span class="k">end</span></pre>
+            <pre class="sm cmp-pre" data-ex="5" data-dec="medal" hidden><span class="k">local</span> v1 = <span class="g">game</span>:GetService(<span class="s">"Workspace"</span>)
+<span class="k">local</span> v2 = {}
+<span class="k">local</span> v3 = { v1:WaitForChild(<span class="s">"World"</span>):WaitForChild(<span class="s">"PlantedSeeds"</span>), v1:WaitForChild(<span class="s">"World"</span>):WaitForChild(<span class="s">"PlacedPots"</span>), v1:WaitForChild(<span class="s">"World"</span>):WaitForChild(<span class="s">"PlacedHangingItems"</span>) }
+<span class="k">local</span> <span class="k">function</span> v_u_6(p4)
+	<span class="k">local</span> v5 = p4.Parent
+	<span class="k">while</span> v5 <span class="k">do</span>
+		<span class="k">if</span> v5:IsA(<span class="s">"Model"</span>) <span class="k">and</span> v5.Name == <span class="s">"Cloud"</span> <span class="k">then</span>
+			<span class="k">return</span> <span class="k">true</span>
+		<span class="k">end</span>
+		v5 = v5.Parent
+	<span class="k">end</span>
+	<span class="k">return</span> <span class="k">false</span>
+<span class="k">end</span>
+<span class="k">function</span> v2.DisableCollision(_, p7)
+	<span class="c">-- upvalues: (copy) v_u_6</span>
+	<span class="k">for</span> _, v8 <span class="k">in</span> p7:GetDescendants() <span class="k">do</span>
+		<span class="k">if</span> v8:IsA(<span class="s">"BasePart"</span>) <span class="k">and</span> <span class="k">not</span> v_u_6(v8) <span class="k">then</span>
+			v8.CanCollide = <span class="k">false</span>
+		<span class="k">end</span>
+	<span class="k">end</span>
+<span class="k">end</span>
+<span class="k">for</span> _, v9 <span class="k">in</span> v3 <span class="k">do</span>
+	v2:DisableCollision(v9)
+	v9.DescendantAdded:Connect(<span class="k">function</span>(p10)
+		<span class="c">-- upvalues: (copy) v_u_6</span>
+		<span class="k">if</span> p10:IsA(<span class="s">"BasePart"</span>) <span class="k">and</span> <span class="k">not</span> v_u_6(p10) <span class="k">then</span>
+			p10.CanCollide = <span class="k">false</span>
+		<span class="k">end</span>
+	<span class="k">end</span>)
+<span class="k">end</span></pre>
+            <pre class="sm cmp-pre" data-ex="5" data-dec="luaexpert" hidden><span class="k">local</span> <span class="g">Workspace</span> = <span class="g">game</span>:GetService(<span class="s">"Workspace"</span>)
+<span class="k">local</span> t = {}
+<span class="k">local</span> t2 = { <span class="g">Workspace</span>:WaitForChild(<span class="s">"World"</span>):WaitForChild(<span class="s">"PlantedSeeds"</span>), <span class="g">Workspace</span>:WaitForChild(<span class="s">"World"</span>):WaitForChild(<span class="s">"PlacedPots"</span>), <span class="g">Workspace</span>:WaitForChild(<span class="s">"World"</span>):WaitForChild(<span class="s">"PlacedHangingItems"</span>) }
+
+<span class="k">local</span> <span class="k">function</span> isCloudPart(p1) <span class="c">--[[ isCloudPart | Line: 12 ]]</span>
+	<span class="k">local</span> v1 = p1.Parent
+
+	<span class="k">while</span> v1 <span class="k">do</span>
+		<span class="k">if</span> v1:IsA(<span class="s">"Model"</span>) <span class="k">and</span> v1.Name == <span class="s">"Cloud"</span> <span class="k">then</span>
+			<span class="k">return</span> <span class="k">true</span>
+		<span class="k">end</span>
+
+		v1 = v1.Parent
+	<span class="k">end</span>
+
+	<span class="k">return</span> <span class="k">false</span>
+<span class="k">end</span>
+
+<span class="k">function</span> t.DisableCollision(p1, p2) <span class="c">--[[ DisableCollision | Line: 23 | Upvalues: isCloudPart (copy) ]]</span>
+	<span class="k">for</span> v1, v2 <span class="k">in</span> p2:GetDescendants() <span class="k">do</span>
+		<span class="k">if</span> v2:IsA(<span class="s">"BasePart"</span>) <span class="k">and</span> <span class="k">not</span> isCloudPart(v2) <span class="k">then</span>
+			v2.CanCollide = <span class="k">false</span>
+		<span class="k">end</span>
+	<span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">for</span> v1, v2 <span class="k">in</span> t2 <span class="k">do</span>
+	t:DisableCollision(v2)
+	v2.DescendantAdded:Connect(<span class="k">function</span>(p1) <span class="c">--[[ Line: 36 | Upvalues: isCloudPart (copy) ]]</span>
+		<span class="k">if</span> <span class="k">not</span> p1:IsA(<span class="s">"BasePart"</span>) <span class="k">or</span> isCloudPart(p1) <span class="k">then</span>
+			<span class="k">return</span>
+		<span class="k">end</span>
+
+		p1.CanCollide = <span class="k">false</span>
+	<span class="k">end</span>)
+<span class="k">end</span></pre>
+            <pre class="sm cmp-pre" data-ex="5" data-dec="tovek" hidden><span class="k">local</span> <span class="g">Workspace</span> = <span class="g">game</span>:GetService(<span class="s">"Workspace"</span>)
+<span class="k">local</span> v = {}
+<span class="k">local</span> v2 = { <span class="g">Workspace</span>:WaitForChild(<span class="s">"World"</span>):WaitForChild(<span class="s">"PlantedSeeds"</span>), <span class="g">Workspace</span>:WaitForChild(<span class="s">"World"</span>):WaitForChild(<span class="s">"PlacedPots"</span>), <span class="g">Workspace</span>:WaitForChild(<span class="s">"World"</span>):WaitForChild(<span class="s">"PlacedHangingItems"</span>) }
+
+<span class="k">local</span> <span class="k">function</span> isCloudPart(p)
+	<span class="k">local</span> parent = p.Parent
+
+	<span class="k">while</span> parent <span class="k">do</span>
+		<span class="k">if</span> parent:IsA(<span class="s">"Model"</span>) <span class="k">and</span> parent.Name == <span class="s">"Cloud"</span> <span class="k">then</span>
+			<span class="k">return</span> <span class="k">true</span>
+		<span class="k">end</span>
+
+		parent = parent.Parent
+	<span class="k">end</span>
+
+	<span class="k">return</span> <span class="k">false</span>
+<span class="k">end</span>
+
+<span class="k">function</span> v:DisableCollision(folder)
+	<span class="k">for</span> _, part <span class="k">in</span> folder:GetDescendants() <span class="k">do</span>
+		<span class="k">if</span> <span class="k">not</span> part:IsA(<span class="s">"BasePart"</span>) <span class="k">then</span>
+			<span class="k">continue</span>
+		<span class="k">end</span>
+
+		<span class="k">if</span> isCloudPart(part) <span class="k">then</span>
+			<span class="k">continue</span>
+		<span class="k">end</span>
+
+		part.CanCollide = <span class="k">false</span>
+	<span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">for</span> _, v3 <span class="k">in</span> v2 <span class="k">do</span>
+	v:DisableCollision(v3)
+	v3.DescendantAdded:Connect(<span class="k">function</span>(part)
+		<span class="k">if</span> part:IsA(<span class="s">"BasePart"</span>) <span class="k">and</span> <span class="k">not</span> isCloudPart(part) <span class="k">then</span>
+			part.CanCollide = <span class="k">false</span>
+		<span class="k">end</span>
+	<span class="k">end</span>)
+<span class="k">end</span></pre>
+            <pre class="sm cmp-pre" data-ex="6" data-dec="source" hidden><span class="c">--[[</span>
+	Sounds
+	Lightweight SFX hooks <span class="k">for</span> the Boss Fight matchmaking flow. Asset IDs are
+	placeholders — fill with real uploaded SFX (TODO). Playing a sound with an
+	empty/invalid id is a safe no-op (<span class="g">pcall</span>-guarded), so the flow never breaks.
+]]
+
+<span class="k">local</span> <span class="g">SoundService</span> = <span class="g">game</span>:GetService(<span class="s">"SoundService"</span>)
+
+<span class="k">local</span> Sounds = {}
+
+<span class="c">-- TODO: replace with real uploaded SFX asset ids.</span>
+Sounds.Id = {
+	MatchFound = <span class="s">""</span>, <span class="c">-- played when a Quick Play match fills (4/4)</span>
+	CountdownTick = <span class="s">""</span>, <span class="c">-- played each "Start in N" tick</span>
+	Start = <span class="s">""</span>, <span class="c">-- played when the countdown ends / battle starts</span>
+}
+
+<span class="k">function</span> Sounds.play(id: <span class="g">string</span>?)
+	<span class="k">if</span> <span class="g">typeof</span>(id) ~= <span class="s">"string"</span> <span class="k">or</span> id == <span class="s">""</span> <span class="k">then</span>
+		<span class="k">return</span>
+	<span class="k">end</span>
+	<span class="g">pcall</span>(<span class="k">function</span>()
+		<span class="k">local</span> s = <span class="g">Instance</span>.new(<span class="s">"Sound"</span>)
+		s.SoundId = id
+		s.Volume = <span class="n">0.6</span>
+		<span class="g">SoundService</span>:PlayLocalSound(s)
+		<span class="g">task</span>.delay(<span class="n">5</span>, <span class="k">function</span>()
+			s:Destroy()
+		<span class="k">end</span>)
+	<span class="k">end</span>)
+<span class="k">end</span>
+
+<span class="k">function</span> Sounds.matchFound()
+	Sounds.play(Sounds.Id.MatchFound)
+<span class="k">end</span>
+
+<span class="k">function</span> Sounds.countdownTick()
+	Sounds.play(Sounds.Id.CountdownTick)
+<span class="k">end</span>
+
+<span class="k">function</span> Sounds.start()
+	Sounds.play(Sounds.Id.Start)
+<span class="k">end</span>
+
+<span class="k">return</span> Sounds</pre>
+            <pre class="sm cmp-pre" data-ex="6" data-dec="medal" hidden><span class="k">local</span> v_u_1 = <span class="g">game</span>:GetService(<span class="s">"SoundService"</span>)
+<span class="k">local</span> v_u_4 = {
+	[<span class="s">"Id"</span>] = {
+		[<span class="s">"MatchFound"</span>] = <span class="s">""</span>,
+		[<span class="s">"CountdownTick"</span>] = <span class="s">""</span>,
+		[<span class="s">"Start"</span>] = <span class="s">""</span>
+	},
+	[<span class="s">"play"</span>] = <span class="k">function</span>(p_u_2)
+		<span class="c">-- upvalues: (copy) v_u_1</span>
+		<span class="k">if</span> <span class="g">typeof</span>(p_u_2) == <span class="s">"string"</span> <span class="k">and</span> p_u_2 ~= <span class="s">""</span> <span class="k">then</span>
+			<span class="g">pcall</span>(<span class="k">function</span>()
+				<span class="c">-- upvalues: (copy) p_u_2, (ref) v_u_1</span>
+				<span class="k">local</span> v_u_3 = <span class="g">Instance</span>.new(<span class="s">"Sound"</span>)
+				v_u_3.SoundId = p_u_2
+				v_u_3.Volume = <span class="n">0.6</span>
+				v_u_1:PlayLocalSound(v_u_3)
+				<span class="g">task</span>.delay(<span class="n">5</span>, <span class="k">function</span>()
+					<span class="c">-- upvalues: (copy) v_u_3</span>
+					v_u_3:Destroy()
+				<span class="k">end</span>)
+			<span class="k">end</span>)
+		<span class="k">end</span>
+	<span class="k">end</span>,
+	[<span class="s">"matchFound"</span>] = <span class="k">function</span>()
+		<span class="c">-- upvalues: (copy) v_u_4</span>
+		v_u_4.play(v_u_4.Id.MatchFound)
+	<span class="k">end</span>,
+	[<span class="s">"countdownTick"</span>] = <span class="k">function</span>()
+		<span class="c">-- upvalues: (copy) v_u_4</span>
+		v_u_4.play(v_u_4.Id.CountdownTick)
+	<span class="k">end</span>,
+	[<span class="s">"start"</span>] = <span class="k">function</span>()
+		<span class="c">-- upvalues: (copy) v_u_4</span>
+		v_u_4.play(v_u_4.Id.Start)
+	<span class="k">end</span>
+}
+<span class="k">return</span> v_u_4</pre>
+            <pre class="sm cmp-pre" data-ex="6" data-dec="luaexpert" hidden><span class="k">local</span> <span class="g">SoundService</span> = <span class="g">game</span>:GetService(<span class="s">"SoundService"</span>)
+<span class="k">local</span> t = {
+	Id = {
+		MatchFound = <span class="s">""</span>,
+		CountdownTick = <span class="s">""</span>,
+		Start = <span class="s">""</span>
+	},
+	play = <span class="k">function</span>(p1) <span class="c">--[[ play | Line: 19 | Upvalues: SoundService (copy) ]]</span>
+		<span class="k">if</span> <span class="g">typeof</span>(p1) == <span class="s">"string"</span> <span class="k">and</span> p1 ~= <span class="s">""</span> <span class="k">then</span>
+			<span class="g">pcall</span>(<span class="k">function</span>() <span class="c">--[[ Line: 23 | Upvalues: p1 (copy), SoundService (ref) ]]</span>
+				<span class="k">local</span> Sound = <span class="g">Instance</span>.new(<span class="s">"Sound"</span>)
+
+				Sound.SoundId = p1
+				Sound.Volume = <span class="n">0.6</span>
+				<span class="g">SoundService</span>:PlayLocalSound(Sound)
+				<span class="g">task</span>.delay(<span class="n">5</span>, <span class="k">function</span>() <span class="c">--[[ Line: 28 | Upvalues: Sound (copy) ]]</span>
+					Sound:Destroy()
+				<span class="k">end</span>)
+			<span class="k">end</span>)
+		<span class="k">end</span>
+	<span class="k">end</span>
+}
+
+<span class="k">function</span> t.matchFound() <span class="c">--[[ matchFound | Line: 34 | Upvalues: t (copy) ]]</span>
+	t.play(t.Id.MatchFound)
+<span class="k">end</span>
+<span class="k">function</span> t.countdownTick() <span class="c">--[[ countdownTick | Line: 38 | Upvalues: t (copy) ]]</span>
+	t.play(t.Id.CountdownTick)
+<span class="k">end</span>
+<span class="k">function</span> t.start() <span class="c">--[[ start | Line: 42 | Upvalues: t (copy) ]]</span>
+	t.play(t.Id.Start)
+<span class="k">end</span>
+
+<span class="k">return</span> t</pre>
+            <pre class="sm cmp-pre" data-ex="6" data-dec="tovek" hidden><span class="k">local</span> <span class="g">SoundService</span> = <span class="g">game</span>:GetService(<span class="s">"SoundService"</span>)
+<span class="k">local</span> Sounds = {
+	Id = {
+		MatchFound = <span class="s">""</span>,
+		CountdownTick = <span class="s">""</span>,
+		Start = <span class="s">""</span>
+	},
+	play = <span class="k">function</span>(value)
+		<span class="k">if</span> <span class="g">typeof</span>(value) ~= <span class="s">"string"</span> <span class="k">or</span> value == <span class="s">""</span> <span class="k">then</span>
+			<span class="k">return</span>
+		<span class="k">end</span>
+
+		<span class="g">pcall</span>(<span class="k">function</span>()
+			<span class="k">local</span> sound = <span class="g">Instance</span>.new(<span class="s">"Sound"</span>)
+			sound.SoundId = value
+			sound.Volume = <span class="n">0.6</span>
+			<span class="g">SoundService</span>:PlayLocalSound(sound)
+			<span class="g">task</span>.delay(<span class="n">5</span>, <span class="k">function</span>()
+				sound:Destroy()
+			<span class="k">end</span>)
+		<span class="k">end</span>)
+	<span class="k">end</span>
+}
+
+<span class="k">function</span> Sounds.matchFound()
+	Sounds.play(Sounds.Id.MatchFound)
+<span class="k">end</span>
+
+<span class="k">function</span> Sounds.countdownTick()
+	Sounds.play(Sounds.Id.CountdownTick)
+<span class="k">end</span>
+
+<span class="k">function</span> Sounds.start()
+	Sounds.play(Sounds.Id.Start)
+<span class="k">end</span>
+
+<span class="k">return</span> Sounds</pre>
+            <pre class="sm cmp-pre" data-ex="7" data-dec="source" hidden><span class="c">--[[</span>
+    FertilizerIdleAnimation
+    Plays an arm-down idle animation <span class="k">while</span> a fertilizer Tool is equipped,
+    overriding Roblox's default tool-hold pose (which raises the arm).
+
+    Mirrors SeedIdleAnimation's pattern. No held-model attach: the fertilizer</pre>
+            <pre class="sm cmp-pre" data-ex="7" data-dec="medal" hidden><span class="k">local</span> v_u_1 = <span class="g">game</span>:GetService(<span class="s">"ContentProvider"</span>)
+<span class="k">local</span> v2 = <span class="g">game</span>:GetService(<span class="s">"Players"</span>)
+<span class="k">local</span> v_u_3 = <span class="g">CFrame</span>.Angles(<span class="n">0</span>, <span class="n">0</span>, -<span class="n">3.141592653589793</span>)
+<span class="g">task</span>.spawn(<span class="k">function</span>()
+	<span class="c">-- upvalues: (copy) v_u_1</span>
+	<span class="k">local</span> v4 = <span class="g">Instance</span>.new(<span class="s">"Animation"</span>)</pre>
+            <pre class="sm cmp-pre" data-ex="7" data-dec="luaexpert" hidden><span class="k">local</span> <span class="g">ContentProvider</span> = <span class="g">game</span>:GetService(<span class="s">"ContentProvider"</span>)
+<span class="k">local</span> <span class="g">Players</span> = <span class="g">game</span>:GetService(<span class="s">"Players"</span>)
+<span class="k">local</span> v1 = <span class="g">CFrame</span>.Angles(<span class="n">0</span>, <span class="n">0</span>, -<span class="n">3.141592653589793</span>)
+
+<span class="g">task</span>.spawn(<span class="k">function</span>() <span class="c">--[[ Line: 21 | Upvalues: ContentProvider (copy) ]]</span>
+	<span class="k">local</span> Animation = <span class="g">Instance</span>.new(<span class="s">"Animation"</span>)</pre>
+            <pre class="sm cmp-pre" data-ex="7" data-dec="tovek" hidden><span class="k">local</span> <span class="g">ContentProvider</span> = <span class="g">game</span>:GetService(<span class="s">"ContentProvider"</span>)
+<span class="k">local</span> <span class="g">Players</span> = <span class="g">game</span>:GetService(<span class="s">"Players"</span>)
+<span class="k">local</span> v = <span class="g">CFrame</span>.Angles(<span class="n">0</span>, <span class="n">0</span>, -<span class="g">math</span>.pi)
+<span class="g">task</span>.spawn(<span class="k">function</span>()
+	<span class="k">local</span> animation = <span class="g">Instance</span>.new(<span class="s">"Animation"</span>)
+	animation.AnimationId = <span class="s">"rbxassetid://112616344909048"</span></pre>
+            <pre class="sm cmp-pre" data-ex="8" data-dec="source" hidden><span class="k">local</span> <span class="g">Players</span> = <span class="g">game</span>:GetService(<span class="s">"Players"</span>)
+<span class="k">local</span> <span class="g">ReplicatedStorage</span> = <span class="g">game</span>:GetService(<span class="s">"ReplicatedStorage"</span>)
+<span class="k">local</span> Remotes = <span class="g">ReplicatedStorage</span>:WaitForChild(<span class="s">"Shared"</span>):WaitForChild(<span class="s">"Remotes"</span>)
+
+<span class="k">local</span> LocalPlayer = <span class="g">Players</span>.LocalPlayer
+<span class="k">local</span> Mouse = LocalPlayer:GetMouse()
+
+Remotes.GetMouseCF.OnClientInvoke = <span class="k">function</span>()
+	<span class="k">return</span> Mouse.Hit
+<span class="k">end</span></pre>
+            <pre class="sm cmp-pre" data-ex="8" data-dec="medal" hidden><span class="k">local</span> v1 = <span class="g">game</span>:GetService(<span class="s">"Players"</span>)
+<span class="k">local</span> v2 = <span class="g">game</span>:GetService(<span class="s">"ReplicatedStorage"</span>):WaitForChild(<span class="s">"Shared"</span>):WaitForChild(<span class="s">"Remotes"</span>)
+<span class="k">local</span> v_u_3 = v1.LocalPlayer:GetMouse()
+<span class="k">function</span> v2.GetMouseCF.OnClientInvoke()
+	<span class="c">-- upvalues: (copy) v_u_3</span>
+	<span class="k">return</span> v_u_3.Hit
+<span class="k">end</span></pre>
+            <pre class="sm cmp-pre" data-ex="8" data-dec="luaexpert" hidden><span class="k">local</span> <span class="g">Players</span> = <span class="g">game</span>:GetService(<span class="s">"Players"</span>)
+<span class="k">local</span> Remotes = <span class="g">game</span>:GetService(<span class="s">"ReplicatedStorage"</span>):WaitForChild(<span class="s">"Shared"</span>):WaitForChild(<span class="s">"Remotes"</span>)
+<span class="k">local</span> v1 = <span class="g">Players</span>.LocalPlayer:GetMouse()
+
+<span class="k">function</span> Remotes.GetMouseCF.OnClientInvoke() <span class="c">--[[ Line: 8 | Upvalues: v1 (copy) ]]</span>
+	<span class="k">return</span> v1.Hit
+<span class="k">end</span></pre>
+            <pre class="sm cmp-pre" data-ex="8" data-dec="tovek" hidden><span class="k">local</span> <span class="g">Players</span> = <span class="g">game</span>:GetService(<span class="s">"Players"</span>)
+<span class="k">local</span> <span class="g">ReplicatedStorage</span> = <span class="g">game</span>:GetService(<span class="s">"ReplicatedStorage"</span>)
+<span class="k">local</span> remotes = <span class="g">ReplicatedStorage</span>:WaitForChild(<span class="s">"Shared"</span>):WaitForChild(<span class="s">"Remotes"</span>)
+<span class="k">local</span> mouse = <span class="g">Players</span>.LocalPlayer:GetMouse()
+
+<span class="k">function</span> remotes.GetMouseCF.OnClientInvoke()
+	<span class="k">return</span> mouse.Hit
+<span class="k">end</span></pre>
+            <pre class="sm cmp-pre" data-ex="9" data-dec="source" hidden><span class="k">local</span> React = <span class="g">require</span>(Packages.React)
+<span class="k">local</span> Theme = <span class="g">require</span>(<span class="g">script</span>.Parent.Parent.theme)
+
+<span class="k">local</span> e = React.createElement
+
+<span class="k">export</span> <span class="g">type</span> Props = {
+	labelText: <span class="g">string</span>,
+	onActivated: (() -&gt; ())?,
+	size: <span class="g">UDim2</span>?,
+	position: <span class="g">UDim2</span>?,
+	anchorPoint: <span class="g">Vector2</span>?,
+	layoutOrder: number?,
+	disabled: boolean?,
+}
+
+<span class="k">local</span> <span class="k">function</span> DetailButton(props: Props)
+	<span class="k">local</span> isDisabled = props.disabled == <span class="k">true</span> <span class="k">or</span> props.onActivated == <span class="k">nil</span>
+
+	<span class="k">return</span> e(<span class="s">"ImageButton"</span>, {
+		Name = <span class="s">"DetailButton"</span>,
+		BackgroundTransparency = <span class="n">1</span>,</pre>
+            <pre class="sm cmp-pre" data-ex="9" data-dec="medal" hidden><span class="k">local</span> v1 = <span class="g">game</span>:GetService(<span class="s">"ReplicatedStorage"</span>):WaitForChild(<span class="s">"Packages"</span>)
+<span class="k">local</span> v_u_2 = <span class="g">require</span>(v1.React)
+<span class="k">local</span> v_u_3 = <span class="g">require</span>(<span class="g">script</span>.Parent.Parent.theme)
+<span class="k">local</span> v_u_4 = v_u_2.createElement
+<span class="k">return</span> <span class="k">function</span>(p_u_5)
+	<span class="c">-- upvalues: (copy) v_u_4, (copy) v_u_3, (copy) v_u_2</span>
+	<span class="k">local</span> v_u_6 = p_u_5.disabled == <span class="k">true</span> <span class="k">and</span> <span class="k">true</span> <span class="k">or</span> p_u_5.onActivated == <span class="k">nil</span>
+	<span class="k">return</span> v_u_4(<span class="s">"ImageButton"</span>, {
+		[<span class="s">"Name"</span>] = <span class="s">"DetailButton"</span>,
+		[<span class="s">"BackgroundTransparency"</span>] = <span class="n">1</span>,
+		[<span class="s">"Image"</span>] = v_u_3.Asset.DetailButton,
+		[<span class="s">"ImageRectOffset"</span>] = v_u_3.AssetRect.DetailButton.Offset,
+		[<span class="s">"ImageRectSize"</span>] = v_u_3.AssetRect.DetailButton.Size,
+		[<span class="s">"ScaleType"</span>] = <span class="g">Enum</span>.ScaleType.Stretch,
+		[<span class="s">"AnchorPoint"</span>] = p_u_5.anchorPoint <span class="k">or</span> <span class="g">Vector2</span>.new(<span class="n">0</span>, <span class="n">0.5</span>),
+		[<span class="s">"Position"</span>] = p_u_5.position <span class="k">or</span> <span class="g">UDim2</span>.fromScale(<span class="n">0.36</span>, <span class="n">0.5</span>),
+		[<span class="s">"Size"</span>] = p_u_5.size <span class="k">or</span> <span class="g">UDim2</span>.fromScale(<span class="n">0.34</span>, <span class="n">0.18</span>),
+		[<span class="s">"AutoButtonColor"</span>] = <span class="k">false</span>,
+		[<span class="s">"Active"</span>] = <span class="k">not</span> v_u_6,
+		[<span class="s">"LayoutOrder"</span>] = p_u_5.layoutOrder <span class="k">or</span> <span class="n">0</span>,
+		[v_u_2.Event.Activated] = <span class="k">function</span>()
+			<span class="c">-- upvalues: (copy) v_u_6, (copy) p_u_5</span>
+			<span class="k">if</span> <span class="k">not</span> v_u_6 <span class="k">and</span> p_u_5.onActivated <span class="k">then</span>
+				p_u_5.onActivated()</pre>
+            <pre class="sm cmp-pre" data-ex="9" data-dec="luaexpert" hidden><span class="k">local</span> Packages = <span class="g">game</span>:GetService(<span class="s">"ReplicatedStorage"</span>):WaitForChild(<span class="s">"Packages"</span>)
+<span class="k">local</span> React = <span class="g">require</span>(Packages.React)
+<span class="k">local</span> theme = <span class="g">require</span>(<span class="g">script</span>.Parent.Parent.theme)
+<span class="k">local</span> createElement = React.createElement
+
+<span class="k">return</span> <span class="k">function</span>(p1) <span class="c">--[[ DetailButton | Line: 28 | Upvalues: createElement (copy), theme (copy), React (copy) ]]</span>
+	<span class="k">local</span> v1 = <span class="k">if</span> p1.disabled == <span class="k">true</span> <span class="k">then</span> <span class="k">true</span> <span class="k">elseif</span> p1.onActivated == <span class="k">nil</span> <span class="k">then</span> <span class="k">true</span> <span class="k">else</span> <span class="k">false</span>
+	<span class="k">local</span> t = {
+		Name = <span class="s">"DetailButton"</span>,
+		BackgroundTransparency = <span class="n">1</span>,
+		Image = theme.Asset.DetailButton,
+		ImageRectOffset = theme.AssetRect.DetailButton.Offset,
+		ImageRectSize = theme.AssetRect.DetailButton.Size,
+		ScaleType = <span class="g">Enum</span>.ScaleType.Stretch
+	}
+
+	t.AnchorPoint = p1.anchorPoint <span class="k">or</span> <span class="g">Vector2</span>.new(<span class="n">0</span>, <span class="n">0.5</span>)
+	t.Position = p1.position <span class="k">or</span> <span class="g">UDim2</span>.fromScale(<span class="n">0.36</span>, <span class="n">0.5</span>)
+	t.Size = p1.size <span class="k">or</span> <span class="g">UDim2</span>.fromScale(<span class="n">0.34</span>, <span class="n">0.18</span>)
+	t.AutoButtonColor = <span class="k">false</span>
+	t.Active = <span class="k">not</span> v1
+	t.LayoutOrder = p1.layoutOrder <span class="k">or</span> <span class="n">0</span>
+	t[React.Event.Activated] = <span class="k">function</span>() <span class="c">--[[ Line: 46 | Upvalues: v1 (copy), p1 (copy) ]]</span></pre>
+            <pre class="sm cmp-pre" data-ex="9" data-dec="tovek" hidden><span class="k">local</span> <span class="g">ReplicatedStorage</span> = <span class="g">game</span>:GetService(<span class="s">"ReplicatedStorage"</span>)
+<span class="k">local</span> react = <span class="g">require</span>(<span class="g">ReplicatedStorage</span>:WaitForChild(<span class="s">"Packages"</span>).React)
+<span class="k">local</span> theme = <span class="g">require</span>(<span class="g">script</span>.Parent.Parent.theme)
+<span class="k">local</span> createElement = react.createElement
+<span class="k">return</span> <span class="k">function</span>(props)
+	<span class="k">local</span> v = props.disabled == <span class="k">true</span> <span class="k">and</span> <span class="k">true</span> <span class="k">or</span> props.onActivated == <span class="k">nil</span>
+	<span class="k">local</span> v3 = {
+		Name = <span class="s">"DetailButton"</span>,
+		BackgroundTransparency = <span class="n">1</span>,
+		Image = theme.Asset.DetailButton,
+		ImageRectOffset = theme.AssetRect.DetailButton.Offset,
+		ImageRectSize = theme.AssetRect.DetailButton.Size,
+		ScaleType = <span class="g">Enum</span>.ScaleType.Stretch,
+		AnchorPoint = props.anchorPoint <span class="k">or</span> <span class="g">Vector2</span>.new(<span class="n">0</span>, <span class="n">0.5</span>),
+		Position = props.position <span class="k">or</span> <span class="g">UDim2</span>.fromScale(<span class="n">0.36</span>, <span class="n">0.5</span>),
+		Size = props.size <span class="k">or</span> <span class="g">UDim2</span>.fromScale(<span class="n">0.34</span>, <span class="n">0.18</span>),
+		AutoButtonColor = <span class="k">false</span>,
+		Active = <span class="k">not</span> v,
+		LayoutOrder = props.layoutOrder <span class="k">or</span> <span class="n">0</span>
+	}</pre>
+          </div>
+        </div>
+        <p class="cmp-hint">&#8596; <b>medal</b> can&rsquo;t read Roblox&rsquo;s v9 bytecode at all, so its panels show the same source compiled with standard Luau &mdash; even then it stops at raw <code>v1, v2</code>. <b>lua.expert</b> reads v9 but stops at &ldquo;correct.&rdquo; <b style="color:var(--acc)">Tovek</b> keeps going.</p>
       </div>
     </div>
   </section>
+
+  <!-- RECEIPTS -->
+  <section class="stats" style="padding:0">
+    <div class="wrap">
+      <div class="stat-grid">
+        <div class="stat reveal"><div class="v"><span class="num">47</span>&#8594;<span class="num" style="color:var(--acc)">0</span></div><div class="l">dead <code style="font-family:var(--mono);color:var(--coral)">if x then true else false</code> ternaries, in one file</div></div>
+        <div class="stat reveal" style="--d:80ms"><div class="v"><span class="num">7</span>&#8594;<span class="num" style="color:var(--acc)">1</span></div><div class="l">copies of one inlined helper &mdash; Tovek restores the call</div></div>
+        <div class="stat reveal" style="--d:160ms"><div class="v"><span class="num" style="color:var(--acc)">0</span></div><div class="l">redundant nil-stores, watermarks &amp; per-line noise Tovek leaves behind</div></div>
+        <div class="stat reveal" style="--d:240ms"><div class="v"><span class="num">100</span>%</div><div class="l">Tovek outputs re-parse under Luau&rsquo;s own front end</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE FIELD: ladder + matrix -->
+  <section id="compare">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">// the field at a glance</span>
+        <h2>Four decompilers, one original.</h2>
+        <p class="field-lede">Every column read the same code. Each rung gets closer to what the developer wrote &mdash; Tovek is the only one that lands on it.</p>
+      </div>
+
+      <div class="ladder reveal">
+        <div class="rung src">
+          <div class="step">the bar</div>
+          <h4>Source</h4>
+          <p>What the developer wrote. Names, methods, idioms, intent &mdash; the thing every decompiler is measured against.</p>
+          <div class="bar"></div>
+        </div>
+        <div class="rung">
+          <div class="step">rung 01 &middot; open</div>
+          <h4>medal</h4>
+          <p>The open-source upstream Tovek forks. Raw <code>v1, v2, v_u_3</code>, no idioms &mdash; and it can&rsquo;t even read Roblox&rsquo;s v9 bytecode.</p>
+          <div class="bar"></div>
+        </div>
+        <div class="rung">
+          <div class="step">rung 02 &middot; closed</div>
+          <h4>lua.expert</h4>
+          <p>The strongest free decompiler &mdash; API-only. Recovers names and loops, but leaves inlining, <code>(1/0)</code>, dead ternaries and per-line noise.</p>
+          <div class="bar"></div>
+        </div>
+        <div class="rung best">
+          <div class="step">rung 03 &middot; open &middot; MIT</div>
+          <h4>Tovek</h4>
+          <p>Names, real methods, de-inlined helpers, normalized conditions, idioms. The only output that reads like the source.</p>
+          <div class="bar"></div>
+        </div>
+      </div>
+
+      <div class="tablewrap reveal">
+        <table class="quad">
+          <thead><tr><th></th><th class="src">Source</th><th>medal</th><th class="lx">lua.expert</th><th class="tk">Tovek</th></tr></thead>
+          <tbody>
+            <tr><td>Reads Roblox v9 bytecode</td><td class="src">&mdash;</td><td class="medal"><span class="no">no</span></td><td class="lx"><span class="yes">yes</span></td><td class="tk"><span class="yes">yes</span></td></tr>
+            <tr><td>Local &amp; parameter names</td><td class="src">real</td><td class="medal"><code>v1, v_u_3</code></td><td class="lx"><code>p1, v1</code> + some</td><td class="tk">inferred + handle names</td></tr>
+            <tr><td>Module table name</td><td class="src"><code>ShovelHighlight</code></td><td class="medal"><code>v2</code></td><td class="lx"><code>t</code></td><td class="tk">recovered</td></tr>
+            <tr><td>OOP <code>:</code> methods &amp; <code>self</code></td><td class="src"><span class="yes">yes</span></td><td class="medal"><code>.m(_, &hellip;)</code></td><td class="lx"><code>.m(p1, &hellip;)</code> + mismatch</td><td class="tk"><code>:m(&hellip;)</code>, real <code>self</code></td></tr>
+            <tr><td>Luau <code>-O2</code> inlined helpers</td><td class="src">&mdash;</td><td class="medal">left inlined</td><td class="lx"><span class="no">inlined &amp; duplicated</span></td><td class="tk">de-inlined + marked</td></tr>
+            <tr><td>Redundant <code>x = nil</code> stores</td><td class="src">none</td><td class="medal"><span class="no">kept</span></td><td class="lx"><span class="no">kept</span></td><td class="tk">removed</td></tr>
+            <tr><td><code>math.huge</code> / <code>math.pi</code></td><td class="src">symbolic</td><td class="medal"><code>(1 / 0)</code></td><td class="lx"><code>(1 / 0)</code> / raw float</td><td class="tk"><code>math.huge</code> / <code>math.pi</code></td></tr>
+            <tr><td>Dead <code>if x then true else false</code></td><td class="src"><span class="yes">none</span></td><td class="medal">&mdash;</td><td class="lx"><span class="no">dozens (47 in one file)</span></td><td class="tk">normalized away</td></tr>
+            <tr><td>Compound assignment</td><td class="src"><code>x += 1</code></td><td class="medal"><code>x = x + 1</code></td><td class="lx"><code>x = x + 1</code></td><td class="tk"><code>x += 1</code></td></tr>
+            <tr><td>Per-function comment noise</td><td class="src"><span class="yes">none</span></td><td class="medal"><code>-- upvalues:</code></td><td class="lx"><span class="no">on every function</span></td><td class="tk">none</td></tr>
+            <tr><td>Tool watermark in output</td><td class="src">none</td><td class="medal">none</td><td class="lx"><code>-- https://lua.expert/</code></td><td class="tk">none</td></tr>
+            <tr><td>Source &amp; license</td><td class="src">&mdash;</td><td class="medal">open</td><td class="lx"><span class="no">closed &middot; API only</span></td><td class="tk"><span class="yes">open &middot; MIT</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="legend"><span><b style="color:var(--gold)">Source</b> &mdash; the bar everything is measured against</span><span><b>Tovek</b> is the only column that matches it across the board</span></div>
+    </div>
+  </section>
+  <script>window.__cmpCaps={"0": "The compiler inlined <code>getMainGui</code>. <b>Tovek</b> names the result <code>main</code> (from <code>FindFirstChild(\"Main\")</code>) and drops the dead stores. <b style=\"color:var(--rose)\">lua.expert</b> and <b style=\"color:var(--gold)\">medal</b> leave it <code>v1</code>/<code>v35</code> and write <code>= nil</code> in two branches where it is <i>already</i> nil.", "1": "The optimizer inlined the <code>clearHighlight</code> helper. <b style=\"color:var(--rose)\">lua.expert</b> copy-pastes its teardown body again and again, nested branches deep. <b>Tovek</b> restores the <code>clearHighlight(p)</code> call at every site and flattens it with guard-returns.", "2": "An inlined <code>isAfkEnabled()</code> guard. <b style=\"color:var(--rose)\">lua.expert</b> flattens it into one unreadable nested-ternary line. <b>Tovek</b> rebuilds the named function and restores the call.", "3": "<b style=\"color:var(--rose)\">lua.expert</b> and <b style=\"color:var(--gold)\">medal</b> spell infinity <code>(1 / 0)</code>; lua.expert also wraps the test in a pointless <code>if \u2026 then \u2026 else false</code>. <b>Tovek</b> restores <code>math.huge</code> and the bare boolean \u2014 identical to source. (In one file it kills 47 such dead ternaries.)", "4": "Sometimes <b style=\"color:var(--rose)\">lua.expert</b> reads <span style=\"color:var(--rose)\">wrong</span>: it folds away a captured snapshot, leaving <code>t._configVersion == t._configVersion</code> \u2014 always true, so a config-reload guard becomes dead. <b>Tovek</b> (and even raw medal) keep the snapshot.", "5": "<b style=\"color:var(--rose)\">lua.expert</b> defines the method with a dot and a leaked <code>self</code> (<code>p1</code>) then calls it with a colon; <b style=\"color:var(--gold)\">medal</b> leaks <code>self</code> as <code>_</code>. <b>Tovek</b> recovers the real <code>:</code> method.", "6": "<b>Tovek</b> recovers the module name <code>Sounds</code> and stays clean \u2014 its output is essentially the source. <b style=\"color:var(--rose)\">lua.expert</b> calls it <code>t</code>; <b style=\"color:var(--gold)\">medal</b> calls it <code>v1</code>. Both bolt comment tags onto every function.", "7": "<b>Tovek</b> recovers the symbolic constant <code>-math.pi</code>; <b style=\"color:var(--rose)\">lua.expert</b> and <b style=\"color:var(--gold)\">medal</b> print the evaluated float <code>-3.141592653589793</code>.", "8": "<b>Tovek</b> names the local <code>mouse</code> (from <code>:GetMouse()</code>) and keeps <code>ReplicatedStorage</code> as a header handle. <b style=\"color:var(--rose)\">lua.expert</b> leaves it <code>v1</code>; <b style=\"color:var(--gold)\">medal</b> leaves it <code>v_u_3</code>.", "9": "<b style=\"color:var(--rose)\">lua.expert</b> builds a partial props table then shreds the rest into <code>t.X = \u2026</code> assignments, and recomputes a boolean with a 3-arm ternary. <b>Tovek</b> keeps one <code>{ \u2026 }</code> literal and a flat boolean."};window.__cmpTitles={"0": "InitNpcQuest.client.luau", "1": "ShovelHighlight.luau", "2": "AfkClient.client.luau", "3": "ChatTipsClient.luau \u00b7 isFiniteNumber", "4": "ChatTipsClient.luau \u00b7 waitForDelay", "5": "collision.client.luau", "6": "Sounds.luau", "7": "FertilizerIdleAnimation.client.luau", "8": "getMouseCF.client.luau", "9": "DetailButton.luau"};</script>
 
   <!-- GET STARTED -->
   <section id="start">
@@ -742,6 +1690,42 @@
       } else { fallbackCopy(txt, b); }
     });
   });
+
+  // comparison picker: choose example + decompiler, swap the visible panel
+  (function(){
+    var cmp = document.getElementById('cmp'); if(!cmp) return;
+    var sel = document.getElementById('cmpEx');
+    var cap = document.getElementById('cmpCap');
+    var title = document.getElementById('cmpTitle');
+    var tag = document.getElementById('cmpTag');
+    var tagText = document.getElementById('cmpTagText');
+    var caps = window.__cmpCaps || {}, titles = window.__cmpTitles || {};
+    var pres = cmp.querySelectorAll('.cmp-pre');
+    var segs = cmp.querySelectorAll('.cmp-seg-btn');
+    var tagInfo = {source:['original','t-src'], medal:['upstream','t-med'], luaexpert:['rival','t-riv'], tovek:['tovek','']};
+    var curEx = '0', curDec = 'tovek';
+    function render(){
+      for(var i=0;i<pres.length;i++){
+        var p = pres[i];
+        p.hidden = !(p.getAttribute('data-ex')===curEx && p.getAttribute('data-dec')===curDec);
+      }
+      if(caps[curEx]!=null) cap.innerHTML = caps[curEx];
+      if(titles[curEx]!=null) title.textContent = titles[curEx];
+      var info = tagInfo[curDec] || ['',''];
+      tag.className = 'win-tag ' + info[1];
+      tagText.textContent = info[0];
+      segs.forEach(function(b){
+        var on = b.getAttribute('data-dec')===curDec;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', on ? 'true':'false');
+      });
+    }
+    sel.addEventListener('change', function(){ curEx = sel.value; render(); });
+    segs.forEach(function(b){
+      b.addEventListener('click', function(){ curDec = b.getAttribute('data-dec'); render(); });
+    });
+    render();
+  })();
 })();
 </script>
 </body>

@@ -73,6 +73,61 @@ A few of the things Tovek does that upstream medal does not:
 
 ---
 
+## How Tovek stacks up against the field
+
+medal is the open-source upstream Tovek forks. **[lua.expert](https://lua.expert/)** — a
+closed-source, API-only service — is the strongest *free* decompiler around and the bar most
+people actually compare against. We ran the **same code** through all four (Source, medal,
+lua.expert, Tovek) and read the output side by side. The
+[landing page](https://kiet1308.github.io/Tovek/#duel) lets you flip between them on each
+example; every panel is real, unedited output.
+
+A note on medal: it **can't read Roblox's current v9 bytecode at all** (it stops at version 6),
+so its column is the same source compiled with standard Luau (`-O2 -g1`) and decompiled — its
+raw style is unchanged. lua.expert and Tovek both read the real v9 bytecode directly.
+
+lua.expert is genuinely good — it recovers function names and modern `for` loops. But it stops
+where Tovek keeps going:
+
+| | Source | medal | lua.expert | **Tovek** |
+|---|---|---|---|---|
+| Reads Roblox v9 bytecode | — | **no** | yes | yes |
+| Local & parameter names | real | `v1, v_u_3` | `p1, v1` + some | inferred + handle names |
+| OOP `:` methods & `self` | yes | `.m(_, …)` | `.m(p1, …)` + colon-call mismatch | `:m(…)`, real `self` |
+| Luau `-O2` inlined helpers | — | left inlined | **inlined & duplicated** | **de-inlined + marked** |
+| Redundant `x = nil` stores | none | kept | kept | removed |
+| `math.huge` / `math.pi` | symbolic | `(1 / 0)` | `(1 / 0)` / raw float | `math.huge` / `math.pi` |
+| Dead `if x then true else false` | none | — | **dozens** (47 in one file) | normalized away (0) |
+| Compound assignment | `x += 1` | `x = x + 1` | `x = x + 1` | `x += 1` |
+| Per-function comment noise | none | `-- upvalues:` | `--[[ name｜Line｜Upvalues ]]` **every fn** | none |
+| Tool watermark in output | none | none | `-- https://lua.expert/` every file | none |
+| Source / license | — | open | **closed — API only** | **open — MIT** |
+
+Concrete, verified examples:
+
+- **It un-inlines the optimizer.** In `ShovelHighlight`, the compiler inlined `clearHighlight`
+  into `updateTarget`. lua.expert copy-pastes the teardown body **7×**, nested four branches
+  deep (227-line file); Tovek restores six `clearHighlight(p)` calls and flattens it with
+  guard-returns (177 lines — the original is 144).
+- **Smart names + no dead stores.** For the inlined `getMainGui` in `InitNpcQuest`, Tovek names
+  the result `main` (from `FindFirstChild("Main")`) and drops the dead `= nil` stores. medal and
+  lua.expert leave it `v35`/`v1` and write `= nil` in two branches where it is already nil.
+- **`math.huge`, not `(1 / 0)`.** In one file Tovek collapses **47** pointless
+  `if x then true else false` ternaries to **0** and restores every `(1 / 0)` to `math.huge`.
+- **Real methods.** lua.expert emits `function t.DisableCollision(p1, p2)` then calls it
+  `t:DisableCollision(v2)` — a dot/colon mismatch that wouldn't round-trip; medal leaks `self`
+  as `_`. Tovek recovers the real `function X:DisableCollision(folder)`.
+- **It even catches what lua.expert gets *wrong*.** In `ChatTipsClient`, lua.expert folds away
+  a captured version snapshot, leaving `t._configVersion == t._configVersion` — always true, so
+  a config-reload guard becomes dead code. Tovek keeps the snapshot.
+
+lua.expert keeps a few rational constants (`1/60`) Tovek currently prints as a decimal, and
+occasionally guesses a local name Tovek leaves as `v*` — but the wins above are *structural*
+(un-inlining, real methods, killed dead ternaries and nil-stores, restored idioms, correctness)
+and hold across the whole sample, not one cherry-picked file.
+
+---
+
 ## Usage
 
 ### CLI
