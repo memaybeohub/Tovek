@@ -47,6 +47,10 @@ A few of the things Tovek does that upstream medal does not:
 - **Idiomatic cleanup.** Compound assignments, backtick string interpolation,
   left-associated `and`/`or` (far fewer redundant parentheses), atomic `math.pi`, dropped
   needless `\'` escapes, and removal of redundant local copies.
+- **Modern bytecode coverage.** Reads every Luau bytecode version up to **v11** — including
+  the v10/v11 format extensions (the per-proto feedback vector and the `CALLFB` / `CMPPROTO` /
+  class-member opcodes) on top of the **v9** Roblox ships today, plus the previously-missing
+  userdata opcodes. (medal stops at version 6 and can't read Roblox at all.)
 - **Validated output.** The full regression corpus (262/262 files) re-parses cleanly under
   Luau's own front end (`luau-analyze`), so readability gains never come at the cost of
   producing source that won't parse.
