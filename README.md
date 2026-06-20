@@ -1,6 +1,6 @@
 # Tovek
 
-**A high-readability, high-performance Luau decompiler.** `beta 0.1`
+**A high-readability, high-performance Luau decompiler.** `beta 0.4`
 
 [**💬 Join the Tovek Discord →**](https://discord.gg/phY6VUDSF7)
 
