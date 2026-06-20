@@ -2175,7 +2175,21 @@ impl<'a, W: fmt::Write> Formatter<'a, W> {
             } else {
                 write!(self.output, ", ")?;
             }
+            // A multret value (`Select`, the adjust-to-one wrapper the lifter mints
+            // for `(call())` / `(...)`) in the FINAL position must keep its
+            // truncating parentheses: `return (two())` yields ONE value, not two
+            // (C5). `return` is the only multret context that omitted this wrap;
+            // mirror `format_arg_list`. Non-last values are already arity-truncated
+            // by the trailing comma, so they need no wrap. A bare `RValue::Call`/
+            // `VarArg` (genuine multret) is not a `Select`, so it stays paren-free.
+            let wrap = i + 1 == r#return.values.len() && matches!(rvalue, RValue::Select(_));
+            if wrap {
+                write!(self.output, "(")?;
+            }
             self.format_rvalue(rvalue)?;
+            if wrap {
+                write!(self.output, ")")?;
+            }
         }
 
         Ok(())
