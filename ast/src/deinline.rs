@@ -37,6 +37,44 @@ const CALL_MARKER: &str = "inlined by Luau -O2 (UNHOOKABLE)";
 
 type FnPtr = *const Mutex<Function>;
 
+/// De-inline rejection reason (P11-C telemetry). Recorded by `deinline_reject!`
+/// at each `collect_targets` gate so a corpus run can report WHICH gate refuses
+/// each candidate (directing where remaining recall actually is) instead of
+/// guessing. Defined unconditionally (it is tiny + `dead_code` without the
+/// feature) so call sites compile in both modes.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+enum RejectReason {
+    /// Binder written more than once (reassigned) — not a stable call target.
+    TargetStillReferenced,
+    /// Variadic helper — `...`→multi-arg arity unprovable (P5-B).
+    Variadic,
+    /// Body contains a closure / goto / label / close / comment / lifter for-node.
+    UnsafeBody,
+    /// Return shape refused: multi-value, mixed void/value, bare-vararg leaf, or a
+    /// non-terminal value return (`classify_returns` / `value_leaf_shape`).
+    UnsupportedReturnShape,
+    /// Canon collapsed the body to nothing.
+    EmptyPattern,
+    /// Below the `anchors >= 2` readability floor (P3, kept refused).
+    LowAnchorScore,
+}
+
+/// Trace a de-inline target rejection. With the `deinline_trace` feature it prints
+/// the gate + function name to stderr; without it the body is absent, so the
+/// reason/name arguments are never evaluated (no lock, no alloc) and release output
+/// stays byte-identical. Kept to the COLD `collect_targets` path only — the hot
+/// per-site matchers stay allocation-free, exactly as the report recommends.
+macro_rules! deinline_reject {
+    ($reason:expr, $name:expr) => {{
+        #[cfg(feature = "deinline_trace")]
+        {
+            let _r: RejectReason = $reason;
+            eprintln!("DEINLINE_REJECT\treason={:?}\tfn={}", _r, $name);
+        }
+    }};
+}
+
 #[derive(PartialEq, Clone, Copy)]
 enum TKind {
     /// Void: every leaf falls through / returns no value. Inlined as a plain
@@ -2136,6 +2174,7 @@ fn collect_targets(body: &Block) -> Vec<Target> {
         // gate: the binder is written exactly once (its declaration) — never
         // reassigned, so `f(args)` is unambiguous (see the census note above).
         if write_counts.get(&f_local).copied().unwrap_or(0) != 1 {
+            deinline_reject!(RejectReason::TargetStillReferenced, "<binder>");
             continue;
         }
         let g = func.lock();
@@ -2148,29 +2187,47 @@ fn collect_targets(body: &Block) -> Vec<Target> {
         // unprovable from the inlined body, so it is left for `body_unsafe`-style
         // refusal here.) Every soundness gate downstream is unchanged.
         if g.is_variadic {
+            deinline_reject!(RejectReason::Variadic, g.name.as_deref().unwrap_or("<anon>"));
             continue;
         }
         if body_unsafe(&g.body.0) {
+            deinline_reject!(RejectReason::UnsafeBody, g.name.as_deref().unwrap_or("<anon>"));
             continue;
         }
         let kind = match classify_returns(&g.body.0) {
             Some(k) => k,
-            None => continue, // multi-return / mixed / non-scalar / non-terminal value return
+            None => {
+                // multi-return / mixed / bare-vararg leaf / non-terminal value return
+                deinline_reject!(
+                    RejectReason::UnsupportedReturnShape,
+                    g.name.as_deref().unwrap_or("<anon>")
+                );
+                continue;
+            }
         };
         let pat = canon(&g.body.0);
         if pat.is_empty() {
+            deinline_reject!(RejectReason::EmptyPattern, g.name.as_deref().unwrap_or("<anon>"));
             continue;
         }
         match kind {
             // void: canon must have removed/folded all returns.
             TKind::Void => {
                 if block_has_return(&pat) {
+                    deinline_reject!(
+                        RejectReason::UnsupportedReturnShape,
+                        g.name.as_deref().unwrap_or("<anon>")
+                    );
                     continue;
                 }
             }
             // value: every leaf must be a single value-return (the result).
             TKind::Value => {
                 if !value_leaf_shape(&pat) {
+                    deinline_reject!(
+                        RejectReason::UnsupportedReturnShape,
+                        g.name.as_deref().unwrap_or("<anon>")
+                    );
                     continue;
                 }
             }
@@ -2189,6 +2246,7 @@ fn collect_targets(body: &Block) -> Vec<Target> {
             );
         }
         if anchors_in_block(&pat) < 2 {
+            deinline_reject!(RejectReason::LowAnchorScore, g.name.as_deref().unwrap_or("<anon>"));
             continue;
         }
         let params: FxHashSet<RcLocal> = g.parameters.iter().cloned().collect();
