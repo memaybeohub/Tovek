@@ -1178,11 +1178,22 @@ impl<'a> Lifter<'a> {
                         let limit = self.register(a as _);
                         let step = self.register((a + 1) as _);
                         let counter = self.register((a + 2) as _);
+                        let counter_lvalue: ast::LValue = counter.clone().into();
                         statements.push(ast::NumForInit::new(counter, limit, step).into());
 
+                        // The loop header is the block that ends in the matching
+                        // `NumForNext` (the FORNLOOP), which FORNPREP jumps to. Normally
+                        // it is found as the predecessor of the body that loops back to
+                        // it. A degenerate `for i = 1, n do break end` body never loops
+                        // back, so the FORNLOOP is NOT a predecessor of the body — the
+                        // predecessor lookup then finds nothing and the old
+                        // `exactly_one().unwrap()` panicked the whole function out (C8 at
+                        // O1). Fall back to the unique `NumForNext` block over the *same*
+                        // counter, scanning the whole function.
+                        let body_node = self.block_to_node(block_start + index + 1);
                         let loop_node = self
                             .function
-                            .predecessor_blocks(self.block_to_node(block_start + index + 1))
+                            .predecessor_blocks(body_node)
                             .filter(|&p| {
                                 self.function
                                     .block(p)
@@ -1190,8 +1201,23 @@ impl<'a> Lifter<'a> {
                                     .last()
                                     .is_some_and(|s| matches!(s, ast::Statement::NumForNext(_)))
                             })
+                            .unique()
                             .exactly_one()
-                            .unwrap();
+                            .ok()
+                            .or_else(|| {
+                                self.function
+                                    .graph()
+                                    .node_indices()
+                                    .filter(|&n| {
+                                        self.function.block(n).and_then(|b| b.last()).is_some_and(
+                                            |s| matches!(s, ast::Statement::NumForNext(nfn)
+                                                if nfn.counter.0 == counter_lvalue),
+                                        )
+                                    })
+                                    .exactly_one()
+                                    .ok()
+                            })
+                            .expect("FORNPREP: no matching NumForNext (FORNLOOP) block");
                         edges.push((loop_node, BlockEdge::new(BranchType::Unconditional)));
                     }
                     OpCode::LOP_FORNLOOP => {

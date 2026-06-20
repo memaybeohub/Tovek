@@ -88,17 +88,35 @@ impl GraphStructurer {
                 }
 
                 let else_successors = self.function.successor_blocks(else_node).collect_vec();
-                if !(!then_successors.is_empty() && then_successors[0] == else_node)
-                    && !(else_successors.len() == 1 && then_successors[0] == else_successors[0])
-                    && !(then_successors[0] == header && else_node == init_block)
-                {
-                    return false;
+                // When the body (`then_node`) has a successor, validate that it is a
+                // collapsible for shape. When it has NONE — the body breaks/returns
+                // out of the loop (e.g. `for i=1,n do break end`) — there is no
+                // successor to validate; indexing `then_successors[0]` here used to
+                // panic out of bounds and lose the whole function (C8). That case is
+                // handled below: the body is taken verbatim and a trailing `break` is
+                // synthesized unless it already ends in a `return`.
+                if let Some(&then_first) = then_successors.first() {
+                    if then_first != else_node
+                        && !(else_successors.len() == 1 && then_first == else_successors[0])
+                        && !(then_first == header && else_node == init_block)
+                    {
+                        return false;
+                    }
                 }
 
                 let statement = self.function.block_mut(header).unwrap().pop().unwrap();
                 let statements = std::mem::take(&mut self.function.block_mut(header).unwrap().0);
 
-                let body_ast = if then_node == init_block {
+                // The body is just `break` when the for-next's then-edge (continue)
+                // lands on the same block as its else-edge (exit): the loop runs its
+                // empty body once and bails. `then_node == init_block` is the
+                // already-handled form; `then_node == else_node` is the other one
+                // (e.g. `for i = 1, n do break end`). In BOTH we must NOT remove
+                // `then_node` — it is a block we still need (the init block, or the
+                // post-loop block `else_node` that the rewritten edge below targets).
+                // Removing it left `set_edges(init_block, [(else_node, …)])` adding an
+                // edge to a deleted node, panicking out the whole function (C8).
+                let body_ast = if then_node == init_block || then_node == else_node {
                     vec![ast::Break {}.into()].into()
                 } else {
                     let mut body_ast = self.function.remove_block(then_node).unwrap();
