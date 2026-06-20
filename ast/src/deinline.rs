@@ -653,25 +653,21 @@ fn negate_canon(cond: RValue) -> RValue {
     }
 }
 
-/// Conditions whose exact boolean inverse `negate_canon` produces losslessly:
-/// `not X` (strips the `not`), `x == y` (→ `x ~= y`), `x ~= y` (→ `x == y`). For
-/// these the identity `if C then A else B ≡ if negate_canon(C) then B else A`
-/// holds value-exactly, so the §8 guard-polarity flip may use them. Relational
-/// `< <= > >=` and `and`/`or` are deliberately EXCLUDED (refuse-by-default):
-/// `negate_canon` would wrap them in `not` — still exact, but kept out of scope to
-/// preserve the conservative NaN/De-Morgan boundary the de-inliner maintains
-/// everywhere else.
-fn cond_exact_invertible(c: &RValue) -> bool {
-    match c {
-        RValue::Unary(u) => u.operation == UnaryOperation::Not,
-        RValue::Binary(b) => {
-            matches!(
-                b.operation,
-                BinaryOperation::Equal | BinaryOperation::NotEqual
-            )
-        }
-        _ => false,
-    }
+/// P9: EVERY condition has an exact boolean inverse for the §8 guard-polarity
+/// flip. The Lua identity `if C then A else B ≡ if not C then B else A` holds for
+/// ANY expression C — C is still evaluated exactly once, in the same place, with
+/// the same short-circuit behaviour; only the branch order swaps. `negate_canon`
+/// realises this inverse losslessly: it strips a leading `not`, swaps `==`/`~=`,
+/// and for everything else (relational `< <= > >=`, `and`/`or`, calls, …) simply
+/// WRAPS in `not`. That wrap is purely structural — it does NOT push the `not`
+/// inward (no De Morgan) and does NOT turn `not (a < b)` into the NaN-unsafe
+/// `a >= b`. The pattern side is already in this wrapped form (`unguard` applies
+/// `negate_canon` to every guard condition unconditionally), so the wrapped
+/// candidate condition unifies with it EXACTLY. Hence the flip is value-exact and
+/// NaN-safe for all conditions, and gating it added nothing but missed matches —
+/// so it now admits every condition.
+fn cond_exact_invertible(_c: &RValue) -> bool {
+    true
 }
 
 pub(crate) fn canon(stmts: &[Statement]) -> Vec<Statement> {
@@ -875,12 +871,15 @@ fn unify_stmt(t: &Target, p: &Statement, c: &Statement, b: &mut Bindings) -> Res
         // callee body into the NEGATED form (`if not C then REST else return
         // early`). These are the exact Lua identity `if C then A else B ≡
         // if not C then B else A`. Try a DIRECT unify first (on a clone, so a
-        // partial failure does not pollute `b`); on failure, when the candidate
-        // condition is in `negate_canon`'s exact-inverse domain (Not / Equal /
-        // NotEqual — value-exact, NaN-safe), retry with the condition negated and
-        // the then/else branches swapped. Gated to Value targets so the void
-        // matches keep their original clone-free path; restricted to the safe
-        // operator set so relational/De-Morgan diamonds stay refused.
+        // partial failure does not pollute `b`); on failure, retry with the
+        // condition negated and the then/else branches swapped. P9: this is now
+        // attempted for EVERY candidate condition — `negate_canon` realises the
+        // inverse losslessly by structural `not`-wrap (NO De Morgan, NO `<`→`>=`),
+        // and the pattern side is already wrapped the same way by `unguard`, so the
+        // wrapped candidate condition unifies EXACTLY. Value-exact and NaN-safe for
+        // all conditions; `cond_exact_invertible` (now always true) is kept as the
+        // documented gate point. Gated to Value targets so the void matches keep
+        // their original clone-free path.
         (Statement::If(pf), Statement::If(cf)) if t.kind == TKind::Value => {
             let mut bd = b.clone();
             let direct = unify_rvalue(&ctx, &pf.condition, &cf.condition, &mut bd)
@@ -3341,11 +3340,13 @@ mod tests {
         assert_eq!(hit.result, Some(v));
     }
 
-    /// A guard whose condition is RELATIONAL must NOT be polarity-flipped — that is
-    /// the NaN-safety boundary (`cond_exact_invertible` excludes `<`). So the
-    /// guard-leading relational value callee stays inlined (refuse-by-default).
+    /// P9: a guard whose condition is RELATIONAL (`<`) IS now polarity-flipped.
+    /// The flip is the value-exact, NaN-safe identity `if C then A else B ≡
+    /// if not C then B else A` realised by a structural `not`-wrap — it never
+    /// rewrites `not (k < 0)` into the NaN-unsafe `k >= 0`, so it is sound for any
+    /// condition. (Was `refuse_relational_guard_not_flipped` pre-P9.)
     #[test]
-    fn refuse_relational_guard_not_flipped() {
+    fn relational_guard_is_polarity_flipped() {
         let obj = local("obj");
         let k = local("k");
         let body = vec![
@@ -3372,10 +3373,13 @@ mod tests {
             print_x(),
         ];
 
-        assert!(
-            match_value_prefixed(&candidate, 0, &t, false, &mut None).is_none(),
-            "relational guard condition must NOT be polarity-flipped"
-        );
+        // f(obj) = k=obj.Field; if k<0 then return false end; return k. The
+        // candidate computes v = (k2<0) ? false : k2 == f(obj). The flip negates
+        // the candidate's `k2<0` to `not (k2<0)` (NOT `k2>=0`) and swaps branches.
+        let hit = match_value_prefixed(&candidate, 0, &t, false, &mut None)
+            .expect("relational guard condition IS polarity-flipped under P9");
+        assert_eq!(hit.consume, 3); // prefix k2(0) + RESULT decl(1) + value-if(2)
+        assert_eq!(hit.result, Some(v));
     }
 
     /// Red-team: the polarity flip lines the diamond up correctly, but a leaf value
