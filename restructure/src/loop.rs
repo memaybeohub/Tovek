@@ -401,6 +401,14 @@ impl GraphStructurer {
                 return changed;
             }
 
+            // The genuine loop-exit target. The `breaks` set above is, by
+            // construction, the predecessors of THIS exit that are dominated by the
+            // body, so those edges are real breaks regardless of the post-dom
+            // recomputation below.
+            let exit = next;
+            // Recomputed exit (may collapse to None for a deeply nested / multi-exit
+            // shape). Used as-is only for continue-origin nodes and the loop
+            // reconstruction further down.
             let next = if self.function.successor_blocks(body).exactly_one().ok() == Some(header)
                 || post_dom
                     .dominators(header)
@@ -410,11 +418,24 @@ impl GraphStructurer {
             } else {
                 None
             };
+            // A node already classified as a break must see the REAL exit so a
+            // `break` is emitted by `refine_virtual_edge_*`; the post-dom
+            // recomputation above must not suppress it. This is C12: in a >=3-deep
+            // nest where an inner loop has multiple break targets and the middle
+            // loop also breaks, `next` collapsed to None and the middle `break` was
+            // silently dropped (its edge absorbed as fall-through), so that loop ran
+            // extra iterations. Continue-only nodes keep the recomputed `next`.
+            let break_set: FxHashSet<NodeIndex> = breaks.iter().copied().collect();
             for node in breaks
                 .into_iter()
                 .chain(continues)
                 .collect::<FxHashSet<_>>()
             {
+                let node_next = if break_set.contains(&node) {
+                    Some(exit)
+                } else {
+                    next
+                };
                 if let Some((then_edge, else_edge)) = self.function.conditional_edges(node) {
                     changed |= self.refine_virtual_edge_conditional(
                         post_dom,
@@ -422,11 +443,16 @@ impl GraphStructurer {
                         then_edge.target(),
                         else_edge.target(),
                         header,
-                        next,
+                        node_next,
                     );
                 } else if let Some(edge) = self.function.unconditional_edge(node) {
-                    changed |=
-                        self.refine_virtual_edge_jump(post_dom, node, edge.target(), header, next);
+                    changed |= self.refine_virtual_edge_jump(
+                        post_dom,
+                        node,
+                        edge.target(),
+                        header,
+                        node_next,
+                    );
                 } else {
                     unreachable!();
                 }
