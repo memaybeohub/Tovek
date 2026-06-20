@@ -2046,16 +2046,32 @@ fn args_vec_eq(a: &[RValue], b: &[RValue]) -> bool {
 // ===================================================================
 
 fn collect_targets(body: &Block) -> Vec<Target> {
-    let mut decls: Vec<(RcLocal, Arc<Mutex<Function>>, usize)> = Vec::new();
+    // P4: write-once census replaces the old `Arc::count(&l) == 1` gate. The
+    // refcount gate was both too STRICT (it dropped any helper that still has a
+    // surviving direct call `f(...)`, since each call-site `RValue::Local(f)`
+    // raises the count) and UNSTABLE across the fixed-point loop (the first
+    // emitted `f(args)` clones the binder, so a multi-site target's count rises
+    // above 1 and it is dropped on the next iteration — defeating the chained /
+    // nested reconstruction P1/P6 rely on). The census instead counts WRITES to
+    // the binder: a binder assigned only by its own `local f = function…end`
+    // declaration (write_count == 1) is never reassigned, so an emitted `f(args)`
+    // always resolves to this function — sound regardless of how many times `f`
+    // is read/called elsewhere. This mirrors the §7 expression de-inliner's
+    // proven gate (`expr_deinline::collect_expr_targets`); the census is shared
+    // (not copied) so the two cannot drift. Cold: computed once per module.
+    let mut write_counts: FxHashMap<RcLocal, usize> = FxHashMap::default();
+    crate::expr_deinline::collect_write_counts(&body.0, &mut write_counts);
+
+    let mut decls: Vec<(RcLocal, Arc<Mutex<Function>>)> = Vec::new();
     each_closure_decl(&body.0, &mut |l, fa| {
-        let count = Arc::count(&l.0 .0);
-        decls.push((l.clone(), fa.clone(), count));
+        decls.push((l.clone(), fa.clone()));
     });
 
     let mut targets = Vec::new();
-    for (f_local, func, count) in decls {
-        // gate: purely inlined-away (only its own declaration references it).
-        if count != 1 {
+    for (f_local, func) in decls {
+        // gate: the binder is written exactly once (its declaration) — never
+        // reassigned, so `f(args)` is unambiguous (see the census note above).
+        if write_counts.get(&f_local).copied().unwrap_or(0) != 1 {
             continue;
         }
         let g = func.lock();
@@ -2086,6 +2102,19 @@ fn collect_targets(body: &Block) -> Vec<Target> {
                     continue;
                 }
             }
+        }
+        if std::env::var("DEINLINE_ANCHOR_TRACE").is_ok() {
+            let a = anchors_in_block(&pat);
+            let nc: usize = pat.iter().map(crate::deinline::dbg_stmt_node_count).sum();
+            let nm = g.name.as_deref().unwrap_or("<none>");
+            eprintln!(
+                "ANCHORTRACE\tanchors={}\tstmts={}\tnodes={}\tkind={:?}\tname={}",
+                a,
+                pat.len(),
+                nc,
+                match kind { TKind::Void => "Void", TKind::Value => "Value" },
+                nm
+            );
         }
         if anchors_in_block(&pat) < 2 {
             continue;
@@ -2522,6 +2551,30 @@ fn anchors_in_block(stmts: &[Statement]) -> usize {
         anchors_in_stmt(s, &mut n);
     }
     n
+}
+
+// Instrumentation only: count rvalue nodes + nested statements in a pattern stmt.
+pub(crate) fn dbg_stmt_node_count(s: &Statement) -> usize {
+    let mut n = 1usize;
+    for rv in crate::deinline::stmt_rvalues(s) {
+        n += dbg_rvalue_node_count(rv);
+    }
+    match s {
+        Statement::If(f) => {
+            n += f.then_block.lock().0.iter().map(dbg_stmt_node_count).sum::<usize>();
+            n += f.else_block.lock().0.iter().map(dbg_stmt_node_count).sum::<usize>();
+        }
+        Statement::While(w) => n += w.block.lock().0.iter().map(dbg_stmt_node_count).sum::<usize>(),
+        Statement::Repeat(r) => n += r.block.lock().0.iter().map(dbg_stmt_node_count).sum::<usize>(),
+        Statement::NumericFor(nf) => n += nf.block.lock().0.iter().map(dbg_stmt_node_count).sum::<usize>(),
+        Statement::GenericFor(gf) => n += gf.block.lock().0.iter().map(dbg_stmt_node_count).sum::<usize>(),
+        _ => {}
+    }
+    n
+}
+
+fn dbg_rvalue_node_count(rv: &RValue) -> usize {
+    1 + rv.rvalues().iter().map(|c| dbg_rvalue_node_count(c)).sum::<usize>()
 }
 
 fn anchors_in_stmt(s: &Statement, n: &mut usize) {

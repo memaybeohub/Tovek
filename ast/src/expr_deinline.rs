@@ -229,7 +229,11 @@ fn collect_expr_targets(body: &Block) -> Vec<ExprTarget> {
 /// sites `deinline::collect_written` recognises (assignment LHS, numeric/generic
 /// `for` induction locals, `SetList` object) but accumulates counts. Runs once at
 /// collection time (cold), not in the matching hot path.
-fn collect_write_counts(stmts: &[Statement], out: &mut FxHashMap<RcLocal, usize>) {
+///
+/// `pub(crate)` so the statement de-inliner (`crate::deinline::collect_targets`,
+/// proposal P4) shares this single source of truth instead of copying it — the
+/// `stmt_rvalues` note below is load-bearing and two copies would drift.
+pub(crate) fn collect_write_counts(stmts: &[Statement], out: &mut FxHashMap<RcLocal, usize>) {
     for s in stmts {
         match s {
             Statement::Assign(a) => {
@@ -272,7 +276,7 @@ fn collect_write_counts(stmts: &[Statement], out: &mut FxHashMap<RcLocal, usize>
     }
 }
 
-fn write_counts_in_closures(rv: &RValue, out: &mut FxHashMap<RcLocal, usize>) {
+pub(crate) fn write_counts_in_closures(rv: &RValue, out: &mut FxHashMap<RcLocal, usize>) {
     if let RValue::Closure(c) = rv {
         collect_write_counts(&c.function.0.lock().body.0, out);
         return;
