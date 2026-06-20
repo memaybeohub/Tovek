@@ -2032,17 +2032,36 @@ fn try_unify_site(t: &Target, cwin: &[Statement]) -> Option<Unified> {
     // temp (the per-function inliner won't hoist it past an effect), which binds
     // here as a side-effect-free `Local` and is accepted. Everything else: REFUSE.
     //
-    // NOTE (DeInlineReview §1): this `collect_written` oracle sees only SYNTACTIC
-    // writes and writes inside closure LITERALS — NOT a caller local mutated by a
-    // call to a by-name function whose body writes a captured upvalue. That is a
-    // real-but-theoretical hole: medal's own `inline_temps` refuses to forward a
-    // single-use snapshot that reads a captured local across a side-effecting
-    // statement (`inline_temps.rs`: `reads_captured_local && has_side_effects`), so
-    // the unstable-argument region never reaches this pass on genuine -O2 output.
-    // Every cheap sound guard (refuse any arg reading a "written-in-some-closure"
-    // local) was measured to refuse de-inlines across 70+ corpus files — because in
-    // React/UI Luau nearly every local lives inside a closure — so it is DEFERRED
-    // rather than pay that readability cost for a precursor medal already prevents.
+    // NOTE (DeInlineReview §1 / DeinlineReport §2 — verified unreachable, P2):
+    // this `collect_written` oracle sees only SYNTACTIC writes and writes inside
+    // closure LITERALS — NOT a caller local mutated indirectly by a call to a
+    // by-name function whose body writes a captured upvalue. For that to corrupt a
+    // reconstruction, a bound argument `a` would have to read a local `x` that some
+    // call IN the region mutates between the call-site (front) and `x`'s in-body use
+    // — making `f(x)` snapshot a stale value. This is unreachable on genuine -O2
+    // output, for THREE independent reasons:
+    //   1. The arg side-effect gate just below refuses any non-trivial arg, so `a`
+    //      can only be a plain `Local`/literal/operator tree, never a call result.
+    //   2. This pass runs BEFORE `inline_temps` (luau-lifter `lib.rs`: deinline at
+    //      ~line 204, inline_single_use_temps at ~213). At deinline time no
+    //      single-use temp has been forwarded yet, so a value that would be unstable
+    //      across an effect still sits in its own distinct snapshot local
+    //      (`local tmp = x` before the effect) and `a` binds to that STABLE `tmp`,
+    //      not to `x`. (When `inline_temps` later runs, `can_move_between`
+    //      ALSO refuses to forward a captured-local read across a side-effecting
+    //      statement — `reads_captured_local && has_side_effects` — so the unstable
+    //      shape never materialises afterwards either.)
+    //   3. An unknown/global/method callee cannot mutate a caller LOCAL unless a
+    //      closure capturing that local by ref has already escaped to it; such a
+    //      capture makes the local `has_side_effects`-tainted upstream and keeps it
+    //      out of the plain-`Local` arg position by (1).
+    // A precise interprocedural effect summary was considered (P2) but would change
+    // ZERO corpus output (the hole is empty); and the cheap sound guard (refuse any
+    // arg reading a "written-in-some-closure" local) was measured to refuse
+    // de-inlines across 70+ corpus files — in React/UI Luau nearly every local
+    // lives inside a closure — so it stays DEFERRED rather than pay that
+    // readability cost for a precursor that cannot occur. A regression tripwire
+    // (`captured_mutation_hole_shape_is_refused`) pins the boundary.
     let mut region_writes: FxHashSet<RcLocal> = FxHashSet::default();
     collect_written(cwin, &mut region_writes);
     for a in &args {
@@ -3088,6 +3107,122 @@ mod tests {
         assert!(
             classify_returns(&multi_body).is_none(),
             "a 2-value return must stay refused"
+        );
+    }
+
+    // === Soundness-boundary tripwires (lock in the SKIP decisions; guard the
+    //     P6/P7 widenings from ever matching an unsound shape) ===
+
+    /// P3: the `anchors_in_block < 2` readability gate keeps a trivial body
+    /// (`return x + 1`, 0 anchors) out — de-inlining it to `f(x)` would be LESS
+    /// readable than the inlined form. Lowering this gate is the report's
+    /// largest-recall idea but is refused on readability grounds.
+    #[test]
+    fn anchor_gate_refuses_trivial_body_p3() {
+        let x = local("x");
+        let trivial = canon(&[return_one(add_one(&x))]); // `return x + 1`
+        assert!(
+            anchors_in_block(&trivial) < 2,
+            "a trivial add-one helper must stay below the anchor floor"
+        );
+    }
+
+    /// P12: `unify_local` injectivity must refuse mapping TWO distinct callee
+    /// locals onto ONE caller local — coalescing two simultaneously-live locals
+    /// into one would assert shared storage the original did not have.
+    #[test]
+    fn injectivity_two_locals_one_caller_refused_p12() {
+        let a = local("a");
+        let b = local("b");
+        let mut locals = FxHashSet::default();
+        locals.insert(a.clone());
+        locals.insert(b.clone());
+        let pat = vec![
+            Statement::Call(Call::new(global("print"), vec![local_value(&a)])),
+            Statement::Call(Call::new(global("print"), vec![local_value(&b)])),
+        ];
+        let t = void_target(pat, locals);
+
+        let c = local("c");
+        let cand = vec![
+            Statement::Call(Call::new(global("print"), vec![local_value(&c)])),
+            Statement::Call(Call::new(global("print"), vec![local_value(&c)])),
+        ];
+        assert!(
+            try_unify_site(&t, &cand).is_none(),
+            "two callee locals mapping to one caller local must be refused"
+        );
+    }
+
+    /// P11-A: a window covering a function's ENTIRE top-level body is refused (the
+    /// thin-wrapper / mutual-clone hazard — a whole-body structural match is the
+    /// least-evidential match for the -O2 marker). The same window matches fine
+    /// when it is NOT the whole body.
+    #[test]
+    fn whole_body_wrapper_refused_p11a() {
+        let pat = vec![print_x(), Statement::Call(Call::new(global("foo"), vec![]))];
+        let t = void_target(pat, FxHashSet::default());
+        let cand = vec![print_x(), Statement::Call(Call::new(global("foo"), vec![]))];
+
+        // is_func_body_top = true AND the window is the whole body -> refused.
+        assert!(
+            match_void(&cand, 0, &t, false, true, &mut None).is_none(),
+            "replacing a function's entire body with one call must be refused"
+        );
+        // Not the whole body (is_func_body_top = false) -> matches.
+        assert!(
+            match_void(&cand, 0, &t, false, false, &mut None).is_some(),
+            "the same region matches when it is not the whole body"
+        );
+    }
+
+    /// P8: a mutable-parameter accumulator (`p = math.max(p, 0)`, p used as LHS)
+    /// must NOT de-inline. Register coalescing makes it `arg = math.max(arg, 0)` on
+    /// a caller-visible local in place — `f(arg)` would be wrong (the call does not
+    /// write arg). `unify_local`'s param-identity requirement refuses it, which the
+    /// P6 prefix widening must not loosen.
+    #[test]
+    fn mutable_param_accumulator_refused_p8() {
+        let p = local("p");
+        let math_max = |v: RValue| {
+            RValue::Call(Call::new(
+                RValue::Index(Index::new(global("math"), string("max"))),
+                vec![v, number(0.0)],
+            ))
+        };
+        // helper body: `p = math.max(p, 0) ; return p` (p is a PARAMETER).
+        let pat = canon(&[
+            assign_local(&p, math_max(local_value(&p)), false),
+            return_one(local_value(&p)),
+        ]);
+        let pat0_kind = std::mem::discriminant(&pat[0]);
+        let mut params = FxHashSet::default();
+        params.insert(p.clone());
+        let t = Target {
+            f_local: local("f"),
+            func_ptr: std::ptr::null::<Mutex<Function>>(),
+            kind: TKind::Value,
+            pat_raw_len: 2,
+            value_anchor: ValueAnchor::AtPrefix,
+            prefix_len: 1,
+            pat0_kind,
+            pat,
+            params,
+            locals: FxHashSet::default(),
+            param_order: vec![p.clone()],
+        };
+
+        let arg = local("arg");
+        let v = local("v");
+        let cand = vec![
+            assign_local(&arg, math_max(local_value(&arg)), false),
+            init_less_decl(&v),
+            assign_local(&v, local_value(&arg), false),
+            print_x(),
+        ];
+        assert!(
+            match_value_prefixed(&cand, 0, &t, false, &mut None).is_none(),
+            "an in-place accumulator with a param-LHS must not de-inline"
         );
     }
 
