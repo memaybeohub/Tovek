@@ -169,18 +169,49 @@ fn copy_is_removable(dst: &RcLocal, src: &RcLocal, usage: &HashMap<RcLocal, Usag
     true
 }
 
+/// True when reading `local` is observable in `statement` directly OR inside a
+/// nested control-flow block. `LocalRw::values_read` does NOT recurse into nested
+/// blocks (`If::values_read` returns only the condition), so a plain
+/// `values_read` scan would miss a read inside an `if`/`while`/`for` body. (A read
+/// inside a CLOSURE means `local` is captured, which gate 4 of `copy_is_removable`
+/// already rejects, so closures need no recursion here.)
+fn reads_local_deep(statement: &Statement, local: &RcLocal) -> bool {
+    if statement.values_read().iter().any(|r| *r == local) {
+        return true;
+    }
+    let any = |block: &Block| block.0.iter().any(|s| reads_local_deep(s, local));
+    match statement {
+        Statement::If(r#if) => any(&r#if.then_block.lock()) || any(&r#if.else_block.lock()),
+        Statement::While(r#while) => any(&r#while.block.lock()),
+        Statement::Repeat(repeat) => any(&repeat.block.lock()),
+        Statement::NumericFor(numeric_for) => any(&numeric_for.block.lock()),
+        Statement::GenericFor(generic_for) => any(&generic_for.block.lock()),
+        _ => false,
+    }
+}
+
 /// True when, for `local dst = src` at `decl_index`, a side-effecting statement
 /// sits between the decl and the LAST read of `dst`. That is the window in which a
 /// call could invoke a closure that mutates the (captured) `src` cell, so
 /// collapsing `dst -> src` would read the mutated value instead of the snapshot.
 fn captured_src_mutated_before_use(block: &Block, decl_index: usize, dst: &RcLocal) -> bool {
-    let Some(last_use) = (decl_index + 1..block.0.len())
+    // The last top-level statement that reads `dst`, directly OR in a nested block.
+    let Some(bound) = (decl_index + 1..block.0.len())
         .rev()
-        .find(|&i| block.0[i].values_read().iter().any(|r| *r == dst))
+        .find(|&i| reads_local_deep(&block.0[i], dst))
     else {
         return false;
     };
-    (decl_index + 1..last_use).any(|i| block.0[i].has_side_effects())
+    // A side effect strictly before that statement is unsafe.
+    if (decl_index + 1..bound).any(|i| block.0[i].has_side_effects()) {
+        return true;
+    }
+    // If the read is NESTED inside a compound statement (not a direct top-level
+    // read), a side effect earlier in that same statement could precede the read,
+    // which the window above cannot see. Conservatively block when that statement
+    // itself has a side effect.
+    !block.0[bound].values_read().iter().any(|r| *r == dst)
+        && block.0[bound].has_side_effects()
 }
 
 /// Gate 6 — anti-swap / anti-stale-copy: `src` must NOT be reassigned anywhere
@@ -406,6 +437,34 @@ mod tests {
         copy_cleanup(&mut block);
 
         assert_eq!(block.0.len(), 3);
+    }
+
+    #[test]
+    fn does_not_collapse_captured_source_with_nested_read_after_side_effect() {
+        // `dst` is read ONLY inside a nested `if`, with a side-effecting call
+        // between the snapshot and the `if`. That call could invoke `handler` and
+        // mutate the captured `v9`, so the copy must NOT collapse. Regression for
+        // F2: `LocalRw::values_read` does not recurse into nested blocks, so the
+        // window scan must use `reads_local_deep`.
+        let src = local("v9");
+        let dst = local("v2");
+        let handler = local("handler");
+        let mut block = Block(vec![
+            declare(&handler, closure_capturing(&src)),
+            declare(&dst, local_value(&src)),
+            print(global("tick")), // intervening side effect (could call handler)
+            If::new(
+                RValue::Literal(Literal::Boolean(true)),
+                Block(vec![print(local_value(&dst))]), // only read of dst, NESTED
+                Block(vec![]),
+            )
+            .into(),
+        ]);
+
+        copy_cleanup(&mut block);
+
+        // dst decl (index 1) must survive.
+        assert!(matches!(&block.0[1], crate::Statement::Assign(_)));
     }
 
     #[test]
