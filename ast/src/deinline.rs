@@ -37,6 +37,44 @@ const CALL_MARKER: &str = "inlined by Luau -O2 (UNHOOKABLE)";
 
 type FnPtr = *const Mutex<Function>;
 
+/// De-inline rejection reason (P11-C telemetry). Recorded by `deinline_reject!`
+/// at each `collect_targets` gate so a corpus run can report WHICH gate refuses
+/// each candidate (directing where remaining recall actually is) instead of
+/// guessing. Defined unconditionally (it is tiny + `dead_code` without the
+/// feature) so call sites compile in both modes.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+enum RejectReason {
+    /// Binder written more than once (reassigned) — not a stable call target.
+    TargetStillReferenced,
+    /// Variadic helper — `...`→multi-arg arity unprovable (P5-B).
+    Variadic,
+    /// Body contains a closure / goto / label / close / comment / lifter for-node.
+    UnsafeBody,
+    /// Return shape refused: multi-value, mixed void/value, bare-vararg leaf, or a
+    /// non-terminal value return (`classify_returns` / `value_leaf_shape`).
+    UnsupportedReturnShape,
+    /// Canon collapsed the body to nothing.
+    EmptyPattern,
+    /// Below the `anchors >= 2` readability floor (P3, kept refused).
+    LowAnchorScore,
+}
+
+/// Trace a de-inline target rejection. With the `deinline_trace` feature it prints
+/// the gate + function name to stderr; without it the body is absent, so the
+/// reason/name arguments are never evaluated (no lock, no alloc) and release output
+/// stays byte-identical. Kept to the COLD `collect_targets` path only — the hot
+/// per-site matchers stay allocation-free, exactly as the report recommends.
+macro_rules! deinline_reject {
+    ($reason:expr, $name:expr) => {{
+        #[cfg(feature = "deinline_trace")]
+        {
+            let _r: RejectReason = $reason;
+            eprintln!("DEINLINE_REJECT\treason={:?}\tfn={}", _r, $name);
+        }
+    }};
+}
+
 #[derive(PartialEq, Clone, Copy)]
 enum TKind {
     /// Void: every leaf falls through / returns no value. Inlined as a plain
@@ -83,6 +121,11 @@ struct Target {
     /// statement shares this variant. Void patterns never contain a `Return`
     /// (`block_has_return`-gated), so the variant is unambiguous for them.
     pat0_kind: std::mem::Discriminant<Statement>,
+    /// Hash of `pat[0]`'s fixed-name anchor (method / global-call name), or `None`
+    /// when it has none — a second O(1) prefilter dimension alongside `pat0_kind`,
+    /// sound by `stmt_anchor_key`'s contract. Cuts per-position work when many
+    /// same-variant targets differ only by name.
+    pat0_anchor_key: Option<u64>,
     params: FxHashSet<RcLocal>, // P
     locals: FxHashSet<RcLocal>, // L (declared callee-locals)
     param_order: Vec<RcLocal>,
@@ -130,8 +173,22 @@ impl Target {
 
 pub fn deinline(body: &mut Block) {
     let mut converted: FxHashSet<RcLocal> = FxHashSet::default();
+    // P4 perf: the write-once census is INVARIANT across fixed-point iterations for
+    // the only thing we query — TARGET BINDERS (a `local f = function…end` local,
+    // declared exactly once). De-inline emits reads of binders and writes to
+    // result-registers, never a new write to a function-local binder, and a target
+    // binder's own decl is never inside a removed region (`body_unsafe` refuses
+    // closure-bearing bodies). So a binder's queried write count never changes;
+    // compute the census ONCE here rather than re-traversing the whole module
+    // inside `collect_targets` on every iteration (the +50% regression P4 caused).
+    // Computing on the original body is also strictly CONSERVATIVE: de-inline only
+    // removes statements, so the effective count can only drop — meaning the once-
+    // map can over-refuse a pathological reassigned-then-inlined binder but can
+    // NEVER wrongly admit one.
+    let mut write_counts: FxHashMap<RcLocal, usize> = FxHashMap::default();
+    crate::expr_deinline::collect_write_counts(&body.0, &mut write_counts);
     loop {
-        let targets = collect_targets(body);
+        let targets = collect_targets(body, &write_counts);
         if targets.is_empty() {
             break;
         }
@@ -163,7 +220,16 @@ pub fn deinline(body: &mut Block) {
         }
     }
     if !converted.is_empty() {
-        collapse_value_results(&mut body.0);
+        // Binders of CONVERTED helpers that can return more than one value (a P7-A
+        // call-return leaf). `collapse_value_results` must not spread these into a
+        // multi-value context (see `collapse_use` / `body_has_call_return`).
+        let mut multivalue: FxHashSet<RcLocal> = FxHashSet::default();
+        each_closure_decl(&body.0, &mut |l, fa| {
+            if converted.contains(l) && body_has_call_return(&fa.lock().body.0) {
+                multivalue.insert(l.clone());
+            }
+        });
+        collapse_value_results(&mut body.0, &multivalue);
         insert_def_markers(&mut body.0, &converted);
     }
 }
@@ -194,22 +260,56 @@ fn is_internal_marker(c: &Comment) -> bool {
     c.text == CALL_MARKER || c.text == DEF_MARKER || c.text == COLLAPSE_MARKER
 }
 
-fn collapse_value_results(stmts: &mut Vec<Statement>) {
+/// A statement that `canon_top` drops (an `Empty` placeholder or one of THIS
+/// pass's own reconstruction markers) — i.e. a runtime no-op that does not
+/// occupy a logical position in a candidate window. MUST stay in lock-step with
+/// the filter in `canon_top` (it strips exactly `Empty` + `is_internal_marker`
+/// comments): the candidate generator decides which raw index is the K-th
+/// *effective* statement, and canon decides what the unifier actually sees, so
+/// the two must agree on what counts as a no-op. A genuine SOURCE comment is NOT
+/// trivia (it refuses the body via `body_unsafe`) and must never be skipped here.
+fn is_match_trivia(s: &Statement) -> bool {
+    matches!(s, Statement::Empty(_))
+        || matches!(s, Statement::Comment(c) if is_internal_marker(c))
+}
+
+/// Absolute index of the `n`-th (0-based) NON-trivia statement at/after `from`
+/// in `stmts`, or `None` if fewer than `n+1` effective statements remain.
+///
+/// Used by the Value-prefix matchers (P1/P6) to locate the interposed init-less
+/// `local RESULT` declaration: an inner de-inline in an earlier fixed-point
+/// iteration can splice a trailing `CALL_MARKER` (or the structurer an `Empty`)
+/// between the callee-prefix statement(s) and that decl, so the fixed offset
+/// `i + prefix_len` would point at the marker and `result_decl` would bail —
+/// silently killing chained / nested AtPrefix reconstruction. Counting only
+/// effective statements restores the match; the trivia is later removed by the
+/// splice (which spans the absolute window `i..i+consume`).
+fn nth_effective_index(stmts: &[Statement], from: usize, n: usize) -> Option<usize> {
+    stmts
+        .iter()
+        .enumerate()
+        .skip(from)
+        .filter(|(_, s)| !is_match_trivia(s))
+        .nth(n)
+        .map(|(idx, _)| idx)
+}
+
+fn collapse_value_results(stmts: &mut Vec<Statement>, multivalue: &FxHashSet<RcLocal>) {
     // recurse into nested blocks and closure bodies first.
     for s in stmts.iter_mut() {
         match s {
             Statement::If(f) => {
-                collapse_value_results(&mut f.then_block.lock().0);
-                collapse_value_results(&mut f.else_block.lock().0);
+                collapse_value_results(&mut f.then_block.lock().0, multivalue);
+                collapse_value_results(&mut f.else_block.lock().0, multivalue);
             }
-            Statement::While(w) => collapse_value_results(&mut w.block.lock().0),
-            Statement::Repeat(r) => collapse_value_results(&mut r.block.lock().0),
-            Statement::NumericFor(nf) => collapse_value_results(&mut nf.block.lock().0),
-            Statement::GenericFor(gf) => collapse_value_results(&mut gf.block.lock().0),
+            Statement::While(w) => collapse_value_results(&mut w.block.lock().0, multivalue),
+            Statement::Repeat(r) => collapse_value_results(&mut r.block.lock().0, multivalue),
+            Statement::NumericFor(nf) => collapse_value_results(&mut nf.block.lock().0, multivalue),
+            Statement::GenericFor(gf) => collapse_value_results(&mut gf.block.lock().0, multivalue),
             _ => {}
         }
         for rv in stmt_rvalues_mut(s) {
-            collapse_in_closures(rv);
+            collapse_in_closures(rv, multivalue);
         }
     }
 
@@ -255,7 +355,7 @@ fn collapse_value_results(stmts: &mut Vec<Statement>) {
             // *written* anywhere we keep either — a later `v = ...` (e.g. inside
             // the collapsed `if`) would otherwise be left with no declaration.
             && last_write.get(&v).is_none_or(|&k| k < i + 2)
-            && let Some(collapsed) = collapse_use(&taken[i + 2], &v, call)
+            && let Some(collapsed) = collapse_use(&taken[i + 2], &v, call, multivalue)
         {
             // The reconstructed call now lives inside `collapsed`. For a
             // single-line `return f(args)` / `x = f(args)` the marker reads best
@@ -292,12 +392,28 @@ fn value_call_decl(a: &Assign) -> Option<(RcLocal, &RValue)> {
 /// If `s` uses `v` exactly in a leading, order-safe position (the whole `if`
 /// condition `v`/`not v`, the whole `return v`, or the whole assign RHS `= v`),
 /// returns `s` with `v` replaced by `call`. Otherwise `None`.
-fn collapse_use(s: &Statement, v: &RcLocal, call: &RValue) -> Option<Statement> {
+///
+/// `multivalue` holds the binders of helpers that can return MORE than one value
+/// (a P7-A call-return helper). For such a call, the MULTI-VALUE-context arms are
+/// refused — `return v` -> `return f(args)` (a tail call spreads all values) and a
+/// MULTI-LHS `a, b = v` -> `a, b = f(args)` would expose values the original
+/// single-LHS `local v = f(args)` had truncated away. Single-value contexts (an
+/// `if` condition, a SINGLE-LHS assign) truncate to one value either way and stay
+/// sound for every helper.
+fn collapse_use(
+    s: &Statement,
+    v: &RcLocal,
+    call: &RValue,
+    multivalue: &FxHashSet<RcLocal>,
+) -> Option<Statement> {
     let is_v = |rv: &RValue| matches!(rv, RValue::Local(x) if x == v);
     let is_not_v = |rv: &RValue| {
         matches!(rv, RValue::Unary(u)
             if u.operation == UnaryOperation::Not && is_v(&u.value))
     };
+    // Does the moved-in call target a multi-value helper? Then it must not be
+    // spread into a multi-value context.
+    let call_is_multivalue = call_callee_local(call).is_some_and(|l| multivalue.contains(l));
     match s {
         Statement::If(f) => {
             let cond = if is_v(&f.condition) {
@@ -316,7 +432,13 @@ fn collapse_use(s: &Statement, v: &RcLocal, call: &RValue) -> Option<Statement> 
                 else_block: f.else_block.clone(),
             }))
         }
-        Statement::Return(r) if r.values.len() == 1 && is_v(&r.values[0]) => {
+        // `return v` is a MULTI-VALUE (tail) context: `return f(args)` would
+        // propagate ALL of a multi-value helper's values, where `local v = f(args)`
+        // truncated to one. Refuse the collapse for such a helper (keep the sound
+        // `local v = f(args); return v`); scalar helpers collapse as before.
+        Statement::Return(r)
+            if r.values.len() == 1 && is_v(&r.values[0]) && !call_is_multivalue =>
+        {
             Some(Statement::Return(Return {
                 values: vec![call.clone()],
             }))
@@ -327,10 +449,15 @@ fn collapse_use(s: &Statement, v: &RcLocal, call: &RValue) -> Option<Statement> 
         // evaluates the prefix relative to the RHS call differently from the
         // pre-collapse `local v = f(); t[k] = v`, so it is only sound when `f`
         // leaves `t`/`k` untouched.
+        // A SINGLE-LHS `x = v` truncates the call to one value either way (sound for
+        // any helper); a MULTI-LHS `a, b = v` is a multi-value context, so refuse it
+        // for a multi-value helper (it would bind b/... to values the original
+        // single-LHS `local v = f(args)` truncated away).
         Statement::Assign(a)
             if a.right.len() == 1
                 && is_v(&a.right[0])
-                && a.left.iter().all(lvalue_safe_for_collapse) =>
+                && a.left.iter().all(lvalue_safe_for_collapse)
+                && (a.left.len() == 1 || !call_is_multivalue) =>
         {
             Some(Statement::Assign(Assign {
                 left: a.left.clone(),
@@ -353,6 +480,46 @@ fn collapse_use(s: &Statement, v: &RcLocal, call: &RValue) -> Option<Statement> 
 /// merges corpus-wide.
 fn lvalue_safe_for_collapse(l: &LValue) -> bool {
     matches!(l, LValue::Local(_) | LValue::Global(_))
+}
+
+/// The single local a reconstructed `helper(args)` call targets (`f` in
+/// `f(args)`), if the callee is a bare local — used to look the callee up in the
+/// multi-value-helper set during collapse.
+fn call_callee_local(call: &RValue) -> Option<&RcLocal> {
+    if let RValue::Call(c) = call {
+        if let RValue::Local(l) = c.value.as_ref() {
+            return Some(l);
+        }
+    }
+    None
+}
+
+/// Does any `return <expr>` in `stmts` (recursing into nested control-flow blocks
+/// but NOT into nested closures — their returns are not this function's) return a
+/// single NON-scalar value (a call / method-call / vararg / select)? Such a helper
+/// can yield MORE than one value when tail-called.
+///
+/// P7-A introduced Value targets with a call/method leaf (`return process(x)`),
+/// reconstructed soundly as the single-LHS, truncated `local RESULT = helper(args)`.
+/// But the cosmetic `collapse_value_results` pass would then spread that helper's
+/// values into a MULTI-VALUE context — `return RESULT` -> `return helper(args)` (a
+/// tail call propagates ALL values) or `a, b = RESULT` -> `a, b = helper(args)` —
+/// where the original truncated to exactly one. Pre-P7-A every Value helper was
+/// scalar (1-value), so the collapse was always sound; flagging call-return helpers
+/// here lets `collapse_use` refuse exactly the multi-value-context arms for them.
+fn body_has_call_return(stmts: &[Statement]) -> bool {
+    stmts.iter().any(|s| match s {
+        Statement::Return(r) => r.values.len() == 1 && !is_scalar_return_value(&r.values[0]),
+        Statement::If(f) => {
+            body_has_call_return(&f.then_block.lock().0)
+                || body_has_call_return(&f.else_block.lock().0)
+        }
+        Statement::While(w) => body_has_call_return(&w.block.lock().0),
+        Statement::Repeat(r) => body_has_call_return(&r.block.lock().0),
+        Statement::NumericFor(nf) => body_has_call_return(&nf.block.lock().0),
+        Statement::GenericFor(gf) => body_has_call_return(&gf.block.lock().0),
+        _ => false,
+    })
 }
 
 fn count_local_reads(stmts: &[Statement], v: &RcLocal) -> usize {
@@ -574,17 +741,17 @@ fn tail_has_live(
         .any(|v| idx.get(v).is_some_and(|&k| k >= tail_start))
 }
 
-fn collapse_in_closures(rv: &mut RValue) {
+fn collapse_in_closures(rv: &mut RValue, multivalue: &FxHashSet<RcLocal>) {
     // Find every closure within `rv` and run the collapse inside its body. Descent
     // uses the enum_dispatch `Traverse::rvalues_mut` (exhaustive by construction, so
     // it can never silently drop a new RValue variant — incl. `IfExpression`),
     // mirroring `expr_deinline::write_counts_in_closures`.
     if let RValue::Closure(c) = rv {
-        collapse_value_results(&mut c.function.0.lock().body.0);
+        collapse_value_results(&mut c.function.0.lock().body.0, multivalue);
         return;
     }
     for child in rv.rvalues_mut() {
-        collapse_in_closures(child);
+        collapse_in_closures(child, multivalue);
     }
 }
 
@@ -619,25 +786,21 @@ fn negate_canon(cond: RValue) -> RValue {
     }
 }
 
-/// Conditions whose exact boolean inverse `negate_canon` produces losslessly:
-/// `not X` (strips the `not`), `x == y` (→ `x ~= y`), `x ~= y` (→ `x == y`). For
-/// these the identity `if C then A else B ≡ if negate_canon(C) then B else A`
-/// holds value-exactly, so the §8 guard-polarity flip may use them. Relational
-/// `< <= > >=` and `and`/`or` are deliberately EXCLUDED (refuse-by-default):
-/// `negate_canon` would wrap them in `not` — still exact, but kept out of scope to
-/// preserve the conservative NaN/De-Morgan boundary the de-inliner maintains
-/// everywhere else.
-fn cond_exact_invertible(c: &RValue) -> bool {
-    match c {
-        RValue::Unary(u) => u.operation == UnaryOperation::Not,
-        RValue::Binary(b) => {
-            matches!(
-                b.operation,
-                BinaryOperation::Equal | BinaryOperation::NotEqual
-            )
-        }
-        _ => false,
-    }
+/// P9: EVERY condition has an exact boolean inverse for the §8 guard-polarity
+/// flip. The Lua identity `if C then A else B ≡ if not C then B else A` holds for
+/// ANY expression C — C is still evaluated exactly once, in the same place, with
+/// the same short-circuit behaviour; only the branch order swaps. `negate_canon`
+/// realises this inverse losslessly: it strips a leading `not`, swaps `==`/`~=`,
+/// and for everything else (relational `< <= > >=`, `and`/`or`, calls, …) simply
+/// WRAPS in `not`. That wrap is purely structural — it does NOT push the `not`
+/// inward (no De Morgan) and does NOT turn `not (a < b)` into the NaN-unsafe
+/// `a >= b`. The pattern side is already in this wrapped form (`unguard` applies
+/// `negate_canon` to every guard condition unconditionally), so the wrapped
+/// candidate condition unifies with it EXACTLY. Hence the flip is value-exact and
+/// NaN-safe for all conditions, and gating it added nothing but missed matches —
+/// so it now admits every condition.
+fn cond_exact_invertible(_c: &RValue) -> bool {
+    true
 }
 
 pub(crate) fn canon(stmts: &[Statement]) -> Vec<Statement> {
@@ -787,6 +950,100 @@ fn unguard(mut stmts: Vec<Statement>) -> Vec<Statement> {
     out
 }
 
+/// The foldable-guard shape `unguard` collapses: `if cond then return [X] end`
+/// (empty else, then-block a single 0-or-1-value return). Factored out so
+/// `canon_top_len` computes the post-unguard length using the EXACT same predicate
+/// `unguard` folds on (no drift); `canon_top_len`'s debug_assert cross-checks the
+/// whole length against the real `canon_top`.
+fn is_foldable_guard(s: &Statement) -> bool {
+    if let Statement::If(f) = s {
+        let then = f.then_block.lock();
+        let els = f.else_block.lock();
+        els.0.is_empty()
+            && then.0.len() == 1
+            && matches!(&then.0[0], Statement::Return(r) if r.values.len() <= 1)
+    } else {
+        false
+    }
+}
+
+/// `canon_top(stmts, tail).len()` WITHOUT allocating the canon'd Vec — a hot-path
+/// pre-filter so the per-width matcher loops pay the `canon_top` + `canon_recurse`
+/// allocations only on a window whose canon'd length actually equals the pattern
+/// length (the common case in the width scan is a NON-match). Mirrors `canon_top`
+/// exactly: count non-trivia (N2); at tail, drop a trailing void return (N1) then
+/// apply `unguard`'s length effect (N3 — the FIRST foldable guard that has a
+/// following effective statement folds everything after it into one `If`, so the
+/// length becomes that guard's index + 1; otherwise no change). The debug_assert
+/// pins it to the real `canon_top` length in debug / test builds.
+fn canon_top_len(stmts: &[Statement], tail: bool) -> usize {
+    let total = stmts.iter().filter(|s| !is_match_trivia(s)).count();
+    let n = if !tail || total == 0 {
+        total
+    } else {
+        // N1: drop a trailing void return (the LAST non-trivia statement).
+        let last_void = stmts
+            .iter()
+            .rev()
+            .find(|s| !is_match_trivia(s))
+            .is_some_and(|s| matches!(s, Statement::Return(r) if r.values.is_empty()));
+        let effective = total - usize::from(last_void);
+        // N3: unguard folds at the first foldable guard that has a following
+        // (within-`effective`) statement -> top-level length is its index + 1.
+        let mut len = effective;
+        for (idx, s) in stmts
+            .iter()
+            .filter(|s| !is_match_trivia(s))
+            .take(effective)
+            .enumerate()
+        {
+            if idx + 1 < effective && is_foldable_guard(s) {
+                len = idx + 1;
+                break;
+            }
+        }
+        len
+    };
+    debug_assert_eq!(
+        n,
+        canon_top(stmts, tail).len(),
+        "canon_top_len must mirror canon_top length exactly"
+    );
+    n
+}
+
+/// A cheap hash prefilter key for the FIRST statement a Void / AtPrefix-Value
+/// pattern unifies against — the fixed NAME the exact unifier requires to match: a
+/// method name (`unify_method` compares `a.method == d.method`) or a global-call
+/// callee name (`unify_call` -> `unify_rvalue` on a `Global`, compared by value).
+/// `None` when the head has no such fixed name (a param-hole callee, an `Assign` /
+/// `If` head, …); the key then cannot discriminate and the full match runs as
+/// before. SOUNDNESS: if two heads carry DIFFERENT fixed names here, `unify_stmt`
+/// MUST fail, so skipping on a key mismatch is false-negative-free. A hash COLLISION
+/// only causes a missed skip (a redundant full match), never a wrong skip — so a
+/// u64 digest is safe. Cuts the per-position work where many same-variant targets
+/// (e.g. lots of `x:Method()` helpers) share `pat0_kind` but differ by name.
+fn stmt_anchor_key(s: &Statement) -> Option<u64> {
+    use core::hash::{Hash, Hasher};
+    let mut h = rustc_hash::FxHasher::default();
+    match s {
+        Statement::MethodCall(m) => {
+            0u8.hash(&mut h);
+            m.method.hash(&mut h);
+            Some(h.finish())
+        }
+        Statement::Call(c) => match c.value.as_ref() {
+            RValue::Global(g) => {
+                1u8.hash(&mut h);
+                g.0.hash(&mut h);
+                Some(h.finish())
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 // ===================================================================
 // Unifier
 // ===================================================================
@@ -841,12 +1098,15 @@ fn unify_stmt(t: &Target, p: &Statement, c: &Statement, b: &mut Bindings) -> Res
         // callee body into the NEGATED form (`if not C then REST else return
         // early`). These are the exact Lua identity `if C then A else B ≡
         // if not C then B else A`. Try a DIRECT unify first (on a clone, so a
-        // partial failure does not pollute `b`); on failure, when the candidate
-        // condition is in `negate_canon`'s exact-inverse domain (Not / Equal /
-        // NotEqual — value-exact, NaN-safe), retry with the condition negated and
-        // the then/else branches swapped. Gated to Value targets so the void
-        // matches keep their original clone-free path; restricted to the safe
-        // operator set so relational/De-Morgan diamonds stay refused.
+        // partial failure does not pollute `b`); on failure, retry with the
+        // condition negated and the then/else branches swapped. P9: this is now
+        // attempted for EVERY candidate condition — `negate_canon` realises the
+        // inverse losslessly by structural `not`-wrap (NO De Morgan, NO `<`→`>=`),
+        // and the pattern side is already wrapped the same way by `unguard`, so the
+        // wrapped candidate condition unifies EXACTLY. Value-exact and NaN-safe for
+        // all conditions; `cond_exact_invertible` (now always true) is kept as the
+        // documented gate point. Gated to Value targets so the void matches keep
+        // their original clone-free path.
         (Statement::If(pf), Statement::If(cf)) if t.kind == TKind::Value => {
             let mut bd = b.clone();
             let direct = unify_rvalue(&ctx, &pf.condition, &cf.condition, &mut bd)
@@ -1690,10 +1950,19 @@ fn try_match_at(
     // existing `result_decl(stmts[i])` gate, and a Value pattern's `pat[0]` may be
     // a leaf `return X` unified against an `Assign`, so the variant check would be
     // unsound there.)
-    let anchor_disc = stmts[i..]
-        .iter()
-        .find(|s| !matches!(s, Statement::Empty(_)))
-        .map(std::mem::discriminant);
+    // Skip only leading `Empty` (NOT internal markers) for this O(1) variant
+    // prefilter. Skipping markers here was tried and reverted: it let `match_void`
+    // attempt windows that START at a reconstruction marker, and on a chained void
+    // site that silently dropped the trailing `-- inlined` marker from an already-
+    // reconstructed call (the call stayed correct, but lost its UNHOOKABLE
+    // annotation). Nothing legitimately begins a match at a marker position, so
+    // the canon-alignment was cosmetic-negative; keep the original predicate.
+    let anchor_stmt = stmts[i..].iter().find(|s| !matches!(s, Statement::Empty(_)));
+    let anchor_disc = anchor_stmt.map(std::mem::discriminant);
+    // Second prefilter dimension: the fixed-name anchor of that first statement
+    // (method / global-call name). Computed once per position; compared to each
+    // candidate target's `pat0_anchor_key`. Same sound domain as `pat0_kind`.
+    let anchor_key = anchor_stmt.and_then(stmt_anchor_key);
     // only targets whose local function is in scope here (declared earlier, in a
     // visible block) are candidates — emitting a call to an out-of-scope local
     // would be invalid.
@@ -1715,6 +1984,15 @@ fn try_match_at(
             || (t.kind == TKind::Value && t.value_anchor == ValueAnchor::AtPrefix);
         if use_disc && anchor_disc != Some(t.pat0_kind) {
             continue; // first-statement variant cannot match this pattern
+        }
+        // Name prefilter (same targets as the variant check): when BOTH the position
+        // and the pattern have a fixed-name head anchor and they differ, the exact
+        // unify of `pat[0]` would fail — skip without entering the window scan.
+        if use_disc
+            && let (Some(ak), Some(tk)) = (anchor_key, t.pat0_anchor_key)
+            && ak != tk
+        {
+            continue;
         }
         let hit = match (t.kind, t.value_anchor) {
             (TKind::Void, _) => match_void(stmts, i, t, is_func_tail, is_func_body_top, last_occ),
@@ -1759,9 +2037,9 @@ fn match_void(
         // paying for the deep nested-block rebuild (`canon_recurse`).
         let plain_blocked = block_has_return(raw) && !(is_func_tail && i + w == stmts.len());
         if !plain_blocked {
-            let plain_top = canon_top(raw, true);
-            if plain_top.len() == kc {
-                let plain = canon_recurse(plain_top, true);
+            // Cheap non-allocating length pre-check before the canon allocations.
+            if canon_top_len(raw, true) == kc {
+                let plain = canon_recurse(canon_top(raw, true), true);
                 if let Some(u) = try_unify_site(t, &plain) {
                     // every callee-temp must be dead after the consumed window, else
                     // a later use would reference a now-removed declaration.
@@ -1775,9 +2053,8 @@ fn match_void(
         // tail, its void early-returns lowered to the caller's tail `return RET`.
         if let Some(ret) = value_tail_ret(stmts, i, w, is_func_tail) {
             let rewritten = rewrite_return_to_void(raw, &ret);
-            let folded_top = canon_top(&rewritten, true);
-            if folded_top.len() == kc {
-                let folded = canon_recurse(folded_top, true);
+            if canon_top_len(&rewritten, true) == kc {
+                let folded = canon_recurse(canon_top(&rewritten, true), true);
                 if let Some(u) = try_unify_site(t, &folded) {
                     if !tail_has_live(last_occ, stmts, i, i + w, &u.callee_locals) {
                         record_site(&mut site, &mut ambiguous, w, &u.args);
@@ -1826,12 +2103,11 @@ fn match_value(
         if block_has_return(region) {
             continue;
         }
-        // Reject by cheap top-level canon length before the deep rebuild.
-        let cwin_top = canon_top(region, true);
-        if cwin_top.len() != kc {
+        // Reject by cheap (non-allocating) top-level canon length before the deep rebuild.
+        if canon_top_len(region, true) != kc {
             continue;
         }
-        let cwin = canon_recurse(cwin_top, true);
+        let cwin = canon_recurse(canon_top(region, true), true);
         if let Some(u) = try_unify_site(t, &cwin) {
             // RESULT must be exactly the declared local and only written (never
             // read) inside the region, so the region is its full computation.
@@ -1881,11 +2157,13 @@ fn match_value_prefixed(
     is_func_body_top: bool,
     last_occ: &mut Option<FxHashMap<RcLocal, usize>>,
 ) -> Option<Hit> {
-    let p = t.prefix_len; // == 1 (scoped)
-    let d = i + p; // the interposed RESULT-decl offset
-    if d >= stmts.len() {
-        return None;
-    }
+    let p = t.prefix_len; // effective callee-prefix statement count (>= 1)
+    // P1: the interposed init-less `local RESULT` decl is the p-th EFFECTIVE
+    // statement at/after i — `i + p` (the old fixed offset) would land on a
+    // CALL_MARKER/`Empty` an inner de-inline spliced between the prefix and the
+    // decl, making `result_decl` bail and silently killing chained AtPrefix
+    // reconstruction. Count only non-trivia statements instead.
+    let d = nth_effective_index(stmts, i, p)?;
     let r = result_decl(&stmts[d])?;
     let kc = t.pat.len();
     let region_start = d + 1;
@@ -1920,12 +2198,11 @@ fn match_value_prefixed(
         let mut union: Vec<Statement> = Vec::with_capacity(p + w);
         union.extend_from_slice(prefix);
         union.extend_from_slice(region);
-        // cheap top-level canon length reject BEFORE the deep nested-block rebuild.
-        let utop = canon_top(&union, true);
-        if utop.len() != kc {
+        // cheap (non-allocating) top-level canon length reject BEFORE the deep rebuild.
+        if canon_top_len(&union, true) != kc {
             continue;
         }
-        let cwin = canon_recurse(utop, true);
+        let cwin = canon_recurse(canon_top(&union, true), true);
         if let Some(u) = try_unify_site(t, &cwin) {
             // RESULT must be exactly the interposed decl, written-only inside the
             // union (its full computation), NOT also a callee-prefix binder (the
@@ -1947,7 +2224,10 @@ fn match_value_prefixed(
     let (w, args) = site?;
     Some(Hit {
         f_local: t.f_local.clone(),
-        consume: p + 1 + w,
+        // Absolute span from i: prefix + any interposed trivia + the RESULT decl
+        // (at d) + the w-statement region. `(d - i)` counts the prefix and trivia
+        // so the splice removes the interposed marker along with the window.
+        consume: (d - i) + 1 + w,
         args,
         result: Some(r),
     })
@@ -1987,17 +2267,36 @@ fn try_unify_site(t: &Target, cwin: &[Statement]) -> Option<Unified> {
     // temp (the per-function inliner won't hoist it past an effect), which binds
     // here as a side-effect-free `Local` and is accepted. Everything else: REFUSE.
     //
-    // NOTE (DeInlineReview §1): this `collect_written` oracle sees only SYNTACTIC
-    // writes and writes inside closure LITERALS — NOT a caller local mutated by a
-    // call to a by-name function whose body writes a captured upvalue. That is a
-    // real-but-theoretical hole: medal's own `inline_temps` refuses to forward a
-    // single-use snapshot that reads a captured local across a side-effecting
-    // statement (`inline_temps.rs`: `reads_captured_local && has_side_effects`), so
-    // the unstable-argument region never reaches this pass on genuine -O2 output.
-    // Every cheap sound guard (refuse any arg reading a "written-in-some-closure"
-    // local) was measured to refuse de-inlines across 70+ corpus files — because in
-    // React/UI Luau nearly every local lives inside a closure — so it is DEFERRED
-    // rather than pay that readability cost for a precursor medal already prevents.
+    // NOTE (DeInlineReview §1 / DeinlineReport §2 — verified unreachable, P2):
+    // this `collect_written` oracle sees only SYNTACTIC writes and writes inside
+    // closure LITERALS — NOT a caller local mutated indirectly by a call to a
+    // by-name function whose body writes a captured upvalue. For that to corrupt a
+    // reconstruction, a bound argument `a` would have to read a local `x` that some
+    // call IN the region mutates between the call-site (front) and `x`'s in-body use
+    // — making `f(x)` snapshot a stale value. This is unreachable on genuine -O2
+    // output, for THREE independent reasons:
+    //   1. The arg side-effect gate just below refuses any non-trivial arg, so `a`
+    //      can only be a plain `Local`/literal/operator tree, never a call result.
+    //   2. This pass runs BEFORE `inline_temps` (luau-lifter `lib.rs`: deinline at
+    //      ~line 204, inline_single_use_temps at ~213). At deinline time no
+    //      single-use temp has been forwarded yet, so a value that would be unstable
+    //      across an effect still sits in its own distinct snapshot local
+    //      (`local tmp = x` before the effect) and `a` binds to that STABLE `tmp`,
+    //      not to `x`. (When `inline_temps` later runs, `can_move_between`
+    //      ALSO refuses to forward a captured-local read across a side-effecting
+    //      statement — `reads_captured_local && has_side_effects` — so the unstable
+    //      shape never materialises afterwards either.)
+    //   3. An unknown/global/method callee cannot mutate a caller LOCAL unless a
+    //      closure capturing that local by ref has already escaped to it; such a
+    //      capture makes the local `has_side_effects`-tainted upstream and keeps it
+    //      out of the plain-`Local` arg position by (1).
+    // A precise interprocedural effect summary was considered (P2) but would change
+    // ZERO corpus output (the hole is empty); and the cheap sound guard (refuse any
+    // arg reading a "written-in-some-closure" local) was measured to refuse
+    // de-inlines across 70+ corpus files — in React/UI Luau nearly every local
+    // lives inside a closure — so it stays DEFERRED rather than pay that
+    // readability cost for a precursor that cannot occur. A regression tripwire
+    // (`captured_mutation_hole_shape_is_refused`) pins the boundary.
     let mut region_writes: FxHashSet<RcLocal> = FxHashSet::default();
     collect_written(cwin, &mut region_writes);
     for a in &args {
@@ -2045,49 +2344,104 @@ fn args_vec_eq(a: &[RValue], b: &[RValue]) -> bool {
 // Target collection + per-function gates
 // ===================================================================
 
-fn collect_targets(body: &Block) -> Vec<Target> {
-    let mut decls: Vec<(RcLocal, Arc<Mutex<Function>>, usize)> = Vec::new();
+fn collect_targets(body: &Block, write_counts: &FxHashMap<RcLocal, usize>) -> Vec<Target> {
+    // P4: a write-once census (`write_counts`, computed once by the caller — see the
+    // invariance note in `deinline`) replaces the old `Arc::count(&l) == 1` gate.
+    // The refcount gate was both too STRICT (it dropped any helper that still has a
+    // surviving direct call `f(...)`, since each call-site `RValue::Local(f)`
+    // raises the count) and UNSTABLE across the fixed-point loop (the first
+    // emitted `f(args)` clones the binder, so a multi-site target's count rises
+    // above 1 and it is dropped on the next iteration — defeating the chained /
+    // nested reconstruction P1/P6 rely on). The census instead counts WRITES to
+    // the binder: a binder assigned only by its own `local f = function…end`
+    // declaration (write_count == 1) is never reassigned, so an emitted `f(args)`
+    // always resolves to this function — sound regardless of how many times `f`
+    // is read/called elsewhere. Mirrors the §7 expression de-inliner's proven gate
+    // (`expr_deinline::collect_expr_targets`); the census is shared (not copied) so
+    // the two cannot drift.
+    let mut decls: Vec<(RcLocal, Arc<Mutex<Function>>)> = Vec::new();
     each_closure_decl(&body.0, &mut |l, fa| {
-        let count = Arc::count(&l.0 .0);
-        decls.push((l.clone(), fa.clone(), count));
+        decls.push((l.clone(), fa.clone()));
     });
 
     let mut targets = Vec::new();
-    for (f_local, func, count) in decls {
-        // gate: purely inlined-away (only its own declaration references it).
-        if count != 1 {
+    for (f_local, func) in decls {
+        // gate: the binder is written exactly once (its declaration) — never
+        // reassigned, so `f(args)` is unambiguous (see the census note above).
+        if write_counts.get(&f_local).copied().unwrap_or(0) != 1 {
+            deinline_reject!(RejectReason::TargetStillReferenced, "<binder>");
             continue;
         }
         let g = func.lock();
-        if g.is_variadic || g.name.is_none() {
+        // P5-A: drop the `g.name.is_none()` gate. `g.name` is only the bytecode
+        // debugname — never consumed by emission (the call/marker use `f_local`,
+        // line ~1377) nor the formatter; only this gate and a debug-trace string
+        // read it. Refusing a name-less closure therefore dropped the `name == 0`
+        // subset of the IDENTICAL `local f = function…end` shape for no soundness
+        // reason. (Variadic stays refused — see P5-B: `...`→multi-arg arity is
+        // unprovable from the inlined body, so it is left for `body_unsafe`-style
+        // refusal here.) Every soundness gate downstream is unchanged.
+        if g.is_variadic {
+            deinline_reject!(RejectReason::Variadic, g.name.as_deref().unwrap_or("<anon>"));
             continue;
         }
         if body_unsafe(&g.body.0) {
+            deinline_reject!(RejectReason::UnsafeBody, g.name.as_deref().unwrap_or("<anon>"));
             continue;
         }
         let kind = match classify_returns(&g.body.0) {
             Some(k) => k,
-            None => continue, // multi-return / mixed / non-scalar / non-terminal value return
+            None => {
+                // multi-return / mixed / bare-vararg leaf / non-terminal value return
+                deinline_reject!(
+                    RejectReason::UnsupportedReturnShape,
+                    g.name.as_deref().unwrap_or("<anon>")
+                );
+                continue;
+            }
         };
         let pat = canon(&g.body.0);
         if pat.is_empty() {
+            deinline_reject!(RejectReason::EmptyPattern, g.name.as_deref().unwrap_or("<anon>"));
             continue;
         }
         match kind {
             // void: canon must have removed/folded all returns.
             TKind::Void => {
                 if block_has_return(&pat) {
+                    deinline_reject!(
+                        RejectReason::UnsupportedReturnShape,
+                        g.name.as_deref().unwrap_or("<anon>")
+                    );
                     continue;
                 }
             }
             // value: every leaf must be a single value-return (the result).
             TKind::Value => {
                 if !value_leaf_shape(&pat) {
+                    deinline_reject!(
+                        RejectReason::UnsupportedReturnShape,
+                        g.name.as_deref().unwrap_or("<anon>")
+                    );
                     continue;
                 }
             }
         }
+        if std::env::var("DEINLINE_ANCHOR_TRACE").is_ok() {
+            let a = anchors_in_block(&pat);
+            let nc: usize = pat.iter().map(crate::deinline::dbg_stmt_node_count).sum();
+            let nm = g.name.as_deref().unwrap_or("<none>");
+            eprintln!(
+                "ANCHORTRACE\tanchors={}\tstmts={}\tnodes={}\tkind={:?}\tname={}",
+                a,
+                pat.len(),
+                nc,
+                match kind { TKind::Void => "Void", TKind::Value => "Value" },
+                nm
+            );
+        }
         if anchors_in_block(&pat) < 2 {
+            deinline_reject!(RejectReason::LowAnchorScore, g.name.as_deref().unwrap_or("<anon>"));
             continue;
         }
         let params: FxHashSet<RcLocal> = g.parameters.iter().cloned().collect();
@@ -2100,23 +2454,45 @@ fn collect_targets(body: &Block) -> Vec<Target> {
         let pat_raw_len = g.body.0.len();
         let param_order = g.parameters.clone();
         let pat0_kind = std::mem::discriminant(&pat[0]);
-        // §8: a Value target whose canon'd body is `<one leading callee Assign> ;
-        // <value branch>` is matched at the call site with the RESULT-register decl
-        // INTERPOSED after that leading statement. `value_leaf_shape` guarantees the
-        // value branch is `pat`'s last statement and the prefix is return-free, so a
-        // 2-statement pattern with an `Assign` head has exactly one prefix statement
-        // (`prefix_len == 1`) — typically the callee's own `local`, but any Assign
-        // head is sound (exact unification proves the match regardless of LHS kind).
-        // Scoped to that clean shape; everything else stays `AtResultDecl`
-        // (== the original, pre-§8 behaviour, strictly additive).
-        let (value_anchor, prefix_len) = if kind == TKind::Value
-            && pat.len() == 2
-            && matches!(pat[0], Statement::Assign(_))
-        {
-            (ValueAnchor::AtPrefix, 1)
+        // §8 + P6: a Value target whose canon'd body is `<K leading non-branch
+        // callee statements> ; <value branch>` is matched at the call site with the
+        // RESULT-register decl INTERPOSED after those K leading statements (those
+        // are the callee's own locals/effects, computed before the value is
+        // produced). `value_leaf_shape` guarantees the value branch is `pat`'s
+        // unique LAST statement and the prefix is return-free, so the prefix is
+        // exactly `pat[..k]` with `k == pat.len() - 1`.
+        //
+        // §8 scoped this to K==1; P6 generalises to 1..=MAX_PREFIX. The prefix
+        // statements must be NON-BRANCH (`Assign`/`Call`/`MethodCall`) for two
+        // reasons: (1) it keeps the `pat0_kind` O(1) prefilter sound (canon
+        // preserves the first surviving statement's variant, and these variants
+        // survive canon unchanged — a leading `If` prefix would be folded/unguarded
+        // and is left on the `AtResultDecl` path); (2) a branch in the prefix would
+        // be a different inlining shape. Soundness is otherwise unchanged: every
+        // whole-window analysis in `match_value_prefixed` (exact unify over the
+        // union, region-write arg-safety, RESULT identity + never-read, callee-temp
+        // liveness) runs over `prefix ++ region`, so K>1 cannot smuggle anything
+        // past the gates the K==1 path already enforces. MAX_PREFIX bounds the
+        // per-position work (the matcher's single per-width loop is unchanged).
+        const MAX_PREFIX: usize = 4;
+        let (value_anchor, prefix_len) = if kind == TKind::Value && pat.len() >= 2 {
+            let k = pat.len() - 1;
+            if (1..=MAX_PREFIX).contains(&k)
+                && pat[..k].iter().all(|s| {
+                    matches!(
+                        s,
+                        Statement::Assign(_) | Statement::Call(_) | Statement::MethodCall(_)
+                    )
+                })
+            {
+                (ValueAnchor::AtPrefix, k)
+            } else {
+                (ValueAnchor::AtResultDecl, 0)
+            }
         } else {
             (ValueAnchor::AtResultDecl, 0)
         };
+        let pat0_anchor_key = stmt_anchor_key(&pat[0]);
         drop(g);
         targets.push(Target {
             f_local,
@@ -2127,6 +2503,7 @@ fn collect_targets(body: &Block) -> Vec<Target> {
             value_anchor,
             prefix_len,
             pat0_kind,
+            pat0_anchor_key,
             params,
             locals,
             param_order,
@@ -2164,9 +2541,13 @@ fn returns_bad(stmts: &[Statement], has_void: &mut bool, has_value: &mut bool) -
                     false
                 } else if r.values.len() == 1 {
                     *has_value = true;
-                    // scalar-only: a call/method/vararg/select tail return has an
-                    // unprovable arity (could be multi-value) — refuse.
-                    !is_scalar_return_value(&r.values[0])
+                    // P7-A: a single-value return is admissible if it is TRUNCATABLE
+                    // — a scalar, or a call/method-call leaf (`return g(x)`) which a
+                    // single-LHS `RESULT = g(x)` inlined site truncates to exactly
+                    // one value (the candidate shape itself proves the arity). A
+                    // bare `...`/`Select::VarArg` is still refused (no provable
+                    // single-value truncation point).
+                    !is_truncatable_return_value(&r.values[0])
                 } else {
                     true // multi-value return
                 }
@@ -2195,6 +2576,22 @@ pub(crate) fn is_scalar_return_value(rv: &RValue) -> bool {
     )
 }
 
+/// P7-A: a return value admissible for a Value target on the RESULT-decl path.
+/// Superset of `is_scalar_return_value` that ALSO admits a call/method-call leaf
+/// (`return g(x)`): at the inlined site such a leaf was lowered to a single-LHS
+/// `RESULT = g(x)`, which Lua truncates to exactly one value — so the candidate
+/// shape itself proves the arity, and the reconstruction `local RESULT = f(args)`
+/// (also single-LHS) truncates identically. A bare `...` / `Select::VarArg` is
+/// still refused: its multi-value spread has no provable single-value truncation
+/// point. SOUND ONLY on the RESULT-decl path: the (Return, Assign) unify arm
+/// requires `ca.left.len() == 1`, so a multi-value site (`local a, b = g(x)`)
+/// never matches; the void-tail path (`value_tail_ret`) keeps its own call-leaf
+/// refusal; and the §7 expression de-inliner keeps the stricter
+/// `is_scalar_return_value` (its expression slot may be a multi-value position).
+fn is_truncatable_return_value(rv: &RValue) -> bool {
+    !matches!(rv, RValue::VarArg(_) | RValue::Select(Select::VarArg(_)))
+}
+
 /// Value targets are only sound when, after `canon`, every `return X` is a
 /// terminal leaf. A `return` in a prefix statement or loop body would skip a
 /// suffix that the lowered `RESULT = X` candidate still runs.
@@ -2206,7 +2603,9 @@ fn value_leaf_shape(stmts: &[Statement]) -> bool {
         return false;
     }
     match last {
-        Statement::Return(r) => r.values.len() == 1 && is_scalar_return_value(&r.values[0]),
+        // P7-A: a call/method leaf is admissible here (truncated by the single-LHS
+        // RESULT lowering); bare `...`/`Select::VarArg` stays refused.
+        Statement::Return(r) => r.values.len() == 1 && is_truncatable_return_value(&r.values[0]),
         Statement::If(f) => {
             let then_ok = value_leaf_shape(&f.then_block.lock().0);
             let else_ok = {
@@ -2524,6 +2923,30 @@ fn anchors_in_block(stmts: &[Statement]) -> usize {
     n
 }
 
+// Instrumentation only: count rvalue nodes + nested statements in a pattern stmt.
+pub(crate) fn dbg_stmt_node_count(s: &Statement) -> usize {
+    let mut n = 1usize;
+    for rv in crate::deinline::stmt_rvalues(s) {
+        n += dbg_rvalue_node_count(rv);
+    }
+    match s {
+        Statement::If(f) => {
+            n += f.then_block.lock().0.iter().map(dbg_stmt_node_count).sum::<usize>();
+            n += f.else_block.lock().0.iter().map(dbg_stmt_node_count).sum::<usize>();
+        }
+        Statement::While(w) => n += w.block.lock().0.iter().map(dbg_stmt_node_count).sum::<usize>(),
+        Statement::Repeat(r) => n += r.block.lock().0.iter().map(dbg_stmt_node_count).sum::<usize>(),
+        Statement::NumericFor(nf) => n += nf.block.lock().0.iter().map(dbg_stmt_node_count).sum::<usize>(),
+        Statement::GenericFor(gf) => n += gf.block.lock().0.iter().map(dbg_stmt_node_count).sum::<usize>(),
+        _ => {}
+    }
+    n
+}
+
+fn dbg_rvalue_node_count(rv: &RValue) -> usize {
+    1 + rv.rvalues().iter().map(|c| dbg_rvalue_node_count(c)).sum::<usize>()
+}
+
 fn anchors_in_stmt(s: &Statement, n: &mut usize) {
     match s {
         Statement::Assign(a) => {
@@ -2774,7 +3197,7 @@ fn markers_in_closures(rv: &mut RValue, converted: &FxHashSet<RcLocal>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Break, Closure, Function, Global, Index, Local};
+    use crate::{Break, Closure, Empty, Function, Global, Index, Local};
     use by_address::ByAddress;
     use parking_lot::Mutex;
     use rustc_hash::FxHashSet;
@@ -2825,7 +3248,9 @@ mod tests {
     }
 
     fn void_target(pat: Vec<Statement>, locals: FxHashSet<RcLocal>) -> Target {
-        let pat0_kind = std::mem::discriminant(pat.first().expect("test pat must be non-empty"));
+        let pat0 = pat.first().expect("test pat must be non-empty");
+        let pat0_kind = std::mem::discriminant(pat0);
+        let pat0_anchor_key = stmt_anchor_key(pat0);
         Target {
             f_local: local("f"),
             func_ptr: std::ptr::null::<Mutex<Function>>(),
@@ -2834,6 +3259,7 @@ mod tests {
             value_anchor: ValueAnchor::AtResultDecl,
             prefix_len: 0,
             pat0_kind,
+            pat0_anchor_key,
             pat,
             params: FxHashSet::default(),
             locals,
@@ -2898,6 +3324,168 @@ mod tests {
         assert!(matches!(classify_returns(&body), Some(TKind::Value)));
     }
 
+    /// P7-A: a call/method-call leaf (`return g(x)`) is an admissible Value leaf —
+    /// the single-LHS `RESULT = g(x)` inlined site truncates it to one value, so
+    /// the candidate shape proves the arity. (Refused pre-P7-A.)
+    #[test]
+    fn call_leaf_is_an_admissible_value_leaf_p7a() {
+        let c = local("c");
+        let body = vec![
+            Statement::If(If::new(
+                local_value(&c),
+                Block(vec![return_one(RValue::Call(Call::new(
+                    global("g"),
+                    vec![local_value(&c)],
+                )))]),
+                Block(vec![return_one(RValue::Literal(Literal::Nil))]),
+            )),
+        ];
+        let pat = canon(&body);
+        assert!(value_leaf_shape(&pat), "call leaf must be admissible");
+        assert!(matches!(classify_returns(&body), Some(TKind::Value)));
+    }
+
+    /// P7-A boundary: a bare `...` (vararg) leaf is STILL refused — its multi-value
+    /// spread has no provable single-value truncation point. Likewise a 2-value
+    /// `return a, b` stays refused (returns_bad's multi-value arm).
+    #[test]
+    fn vararg_and_multivalue_leaves_still_refused_p7a() {
+        let vararg_body = vec![Statement::Return(Return::new(vec![RValue::VarArg(
+            crate::VarArg,
+        )]))];
+        assert!(
+            classify_returns(&vararg_body).is_none(),
+            "a bare vararg return must stay refused"
+        );
+
+        let multi_body = vec![Statement::Return(Return::new(vec![
+            string("a"),
+            string("b"),
+        ]))];
+        assert!(
+            classify_returns(&multi_body).is_none(),
+            "a 2-value return must stay refused"
+        );
+    }
+
+    // === Soundness-boundary tripwires (lock in the SKIP decisions; guard the
+    //     P6/P7 widenings from ever matching an unsound shape) ===
+
+    /// P3: the `anchors_in_block < 2` readability gate keeps a trivial body
+    /// (`return x + 1`, 0 anchors) out — de-inlining it to `f(x)` would be LESS
+    /// readable than the inlined form. Lowering this gate is the report's
+    /// largest-recall idea but is refused on readability grounds.
+    #[test]
+    fn anchor_gate_refuses_trivial_body_p3() {
+        let x = local("x");
+        let trivial = canon(&[return_one(add_one(&x))]); // `return x + 1`
+        assert!(
+            anchors_in_block(&trivial) < 2,
+            "a trivial add-one helper must stay below the anchor floor"
+        );
+    }
+
+    /// P12: `unify_local` injectivity must refuse mapping TWO distinct callee
+    /// locals onto ONE caller local — coalescing two simultaneously-live locals
+    /// into one would assert shared storage the original did not have.
+    #[test]
+    fn injectivity_two_locals_one_caller_refused_p12() {
+        let a = local("a");
+        let b = local("b");
+        let mut locals = FxHashSet::default();
+        locals.insert(a.clone());
+        locals.insert(b.clone());
+        let pat = vec![
+            Statement::Call(Call::new(global("print"), vec![local_value(&a)])),
+            Statement::Call(Call::new(global("print"), vec![local_value(&b)])),
+        ];
+        let t = void_target(pat, locals);
+
+        let c = local("c");
+        let cand = vec![
+            Statement::Call(Call::new(global("print"), vec![local_value(&c)])),
+            Statement::Call(Call::new(global("print"), vec![local_value(&c)])),
+        ];
+        assert!(
+            try_unify_site(&t, &cand).is_none(),
+            "two callee locals mapping to one caller local must be refused"
+        );
+    }
+
+    /// P11-A: a window covering a function's ENTIRE top-level body is refused (the
+    /// thin-wrapper / mutual-clone hazard — a whole-body structural match is the
+    /// least-evidential match for the -O2 marker). The same window matches fine
+    /// when it is NOT the whole body.
+    #[test]
+    fn whole_body_wrapper_refused_p11a() {
+        let pat = vec![print_x(), Statement::Call(Call::new(global("foo"), vec![]))];
+        let t = void_target(pat, FxHashSet::default());
+        let cand = vec![print_x(), Statement::Call(Call::new(global("foo"), vec![]))];
+
+        // is_func_body_top = true AND the window is the whole body -> refused.
+        assert!(
+            match_void(&cand, 0, &t, false, true, &mut None).is_none(),
+            "replacing a function's entire body with one call must be refused"
+        );
+        // Not the whole body (is_func_body_top = false) -> matches.
+        assert!(
+            match_void(&cand, 0, &t, false, false, &mut None).is_some(),
+            "the same region matches when it is not the whole body"
+        );
+    }
+
+    /// P8: a mutable-parameter accumulator (`p = math.max(p, 0)`, p used as LHS)
+    /// must NOT de-inline. Register coalescing makes it `arg = math.max(arg, 0)` on
+    /// a caller-visible local in place — `f(arg)` would be wrong (the call does not
+    /// write arg). `unify_local`'s param-identity requirement refuses it, which the
+    /// P6 prefix widening must not loosen.
+    #[test]
+    fn mutable_param_accumulator_refused_p8() {
+        let p = local("p");
+        let math_max = |v: RValue| {
+            RValue::Call(Call::new(
+                RValue::Index(Index::new(global("math"), string("max"))),
+                vec![v, number(0.0)],
+            ))
+        };
+        // helper body: `p = math.max(p, 0) ; return p` (p is a PARAMETER).
+        let pat = canon(&[
+            assign_local(&p, math_max(local_value(&p)), false),
+            return_one(local_value(&p)),
+        ]);
+        let pat0_kind = std::mem::discriminant(&pat[0]);
+        let pat0_anchor_key = stmt_anchor_key(&pat[0]);
+        let mut params = FxHashSet::default();
+        params.insert(p.clone());
+        let t = Target {
+            f_local: local("f"),
+            func_ptr: std::ptr::null::<Mutex<Function>>(),
+            kind: TKind::Value,
+            pat_raw_len: 2,
+            value_anchor: ValueAnchor::AtPrefix,
+            prefix_len: 1,
+            pat0_kind,
+            pat0_anchor_key,
+            pat,
+            params,
+            locals: FxHashSet::default(),
+            param_order: vec![p.clone()],
+        };
+
+        let arg = local("arg");
+        let v = local("v");
+        let cand = vec![
+            assign_local(&arg, math_max(local_value(&arg)), false),
+            init_less_decl(&v),
+            assign_local(&v, local_value(&arg), false),
+            print_x(),
+        ];
+        assert!(
+            match_value_prefixed(&cand, 0, &t, false, &mut None).is_none(),
+            "an in-place accumulator with a param-LHS must not de-inline"
+        );
+    }
+
     // === §8: call-site value de-inline with an interposed RESULT decl ===
 
     fn boolean(b: bool) -> RValue {
@@ -2950,6 +3538,7 @@ mod tests {
         let mut locals = FxHashSet::default();
         collect_declared_locals(&pat, &mut locals);
         let pat0_kind = std::mem::discriminant(&pat[0]);
+        let pat0_anchor_key = stmt_anchor_key(&pat[0]);
         Target {
             f_local: local("f"),
             func_ptr: std::ptr::null::<Mutex<Function>>(),
@@ -2958,6 +3547,40 @@ mod tests {
             value_anchor: ValueAnchor::AtPrefix,
             prefix_len: 1,
             pat0_kind,
+            pat0_anchor_key,
+            pat,
+            params: FxHashSet::default(),
+            locals,
+            param_order: Vec::new(),
+        }
+    }
+
+    /// P6: build an `AtPrefix` Value target with K>=1 leading non-branch prefix
+    /// statements (`prefix_len == pat.len() - 1`), mirroring `collect_targets`.
+    fn value_prefix_target_k(body: &[Statement]) -> Target {
+        let pat = canon(body);
+        let k = pat.len() - 1;
+        assert!(k >= 1, "need at least one prefix statement");
+        assert!(
+            pat[..k].iter().all(|s| matches!(
+                s,
+                Statement::Assign(_) | Statement::Call(_) | Statement::MethodCall(_)
+            )),
+            "prefix statements must be non-branch"
+        );
+        let mut locals = FxHashSet::default();
+        collect_declared_locals(&pat, &mut locals);
+        let pat0_kind = std::mem::discriminant(&pat[0]);
+        let pat0_anchor_key = stmt_anchor_key(&pat[0]);
+        Target {
+            f_local: local("f"),
+            func_ptr: std::ptr::null::<Mutex<Function>>(),
+            kind: TKind::Value,
+            pat_raw_len: body.len(),
+            value_anchor: ValueAnchor::AtPrefix,
+            prefix_len: k,
+            pat0_kind,
+            pat0_anchor_key,
             pat,
             params: FxHashSet::default(),
             locals,
@@ -3096,11 +3719,99 @@ mod tests {
         assert_eq!(hit.result, Some(v));
     }
 
-    /// A guard whose condition is RELATIONAL must NOT be polarity-flipped — that is
-    /// the NaN-safety boundary (`cond_exact_invertible` excludes `<`). So the
-    /// guard-leading relational value callee stays inlined (refuse-by-default).
+    /// P1 regression: a `CALL_MARKER` an inner de-inline spliced between the
+    /// callee-prefix statement and the interposed `local RESULT` decl must NOT
+    /// break the AtPrefix match. The old `d = i + p` offset pointed at the marker
+    /// (`result_decl` -> None -> bail), silently killing chained reconstruction;
+    /// `nth_effective_index` skips the marker and still finds the decl, and the
+    /// `consume` span removes the marker along with the window.
     #[test]
-    fn refuse_relational_guard_not_flipped() {
+    fn value_prefix_marker_between_prefix_and_result_decl_still_matches() {
+        let obj = local("obj");
+        let k = local("k");
+        let body = vec![
+            assign_local(&k, field(local_value(&obj), "Field"), true),
+            if_stmt(
+                bin(local_value(&k), BinaryOperation::Equal, number(1.0)),
+                vec![return_one(string("a"))],
+                vec![return_one(string("b"))],
+            ),
+        ];
+        let t = value_prefix_target(&body);
+
+        let k2 = local("k2");
+        let v = local("v");
+        let marker = Statement::Comment(Comment::trailing(CALL_MARKER.to_string()));
+        let candidate = vec![
+            assign_local(&k2, field(local_value(&obj), "Field"), true),
+            marker, // interposed by an inner de-inline of the prefix
+            init_less_decl(&v),
+            if_stmt(
+                bin(local_value(&k2), BinaryOperation::Equal, number(1.0)),
+                vec![assign_local(&v, string("a"), false)],
+                vec![assign_local(&v, string("b"), false)],
+            ),
+            print_x(), // trailing stmt: window isn't whole-body; doesn't read k2
+        ];
+
+        let hit = match_value_prefixed(&candidate, 0, &t, false, &mut None)
+            .expect("interposed marker must not break the AtPrefix match");
+        // span = prefix(0) + marker(1) + decl(2) + region-if(3): removes 4 stmts,
+        // leaving the trailing print.
+        assert_eq!(hit.consume, 4);
+        assert_eq!(hit.result, Some(v));
+    }
+
+    /// P6: a Value helper with TWO leading non-branch prefix statements (K==2)
+    /// inlines as `<prefix1> ; <prefix2> ; local RESULT ; <value branch>`. The
+    /// generalised `prefix_len = pat.len()-1` + logical-index RESULT lookup must
+    /// match it (the old K==1 scope refused everything but a single prefix stmt).
+    #[test]
+    fn value_prefix_k2_matches() {
+        let obj = local("obj");
+        let a = local("a");
+        let b = local("b");
+        let body = vec![
+            assign_local(&a, field(local_value(&obj), "A"), true),
+            assign_local(&b, field(local_value(&obj), "B"), true),
+            if_stmt(
+                bin(local_value(&a), BinaryOperation::GreaterThan, local_value(&b)),
+                vec![return_one(local_value(&a))],
+                vec![return_one(local_value(&b))],
+            ),
+        ];
+        let t = value_prefix_target_k(&body);
+        assert_eq!(t.prefix_len, 2);
+
+        let a2 = local("a2");
+        let b2 = local("b2");
+        let v = local("v");
+        let candidate = vec![
+            assign_local(&a2, field(local_value(&obj), "A"), true),
+            assign_local(&b2, field(local_value(&obj), "B"), true),
+            init_less_decl(&v),
+            if_stmt(
+                bin(local_value(&a2), BinaryOperation::GreaterThan, local_value(&b2)),
+                vec![assign_local(&v, local_value(&a2), false)],
+                vec![assign_local(&v, local_value(&b2), false)],
+            ),
+            print_x(), // trailing: window isn't whole-body
+        ];
+
+        let hit = match_value_prefixed(&candidate, 0, &t, false, &mut None)
+            .expect("K==2 value prefix should match");
+        // span = prefix a2(0) + prefix b2(1) + RESULT decl(2) + value-if(3).
+        assert_eq!(hit.consume, 4);
+        assert_eq!(hit.result, Some(v));
+    }
+
+    /// P9: a guard whose condition is RELATIONAL (`<`) IS now polarity-flipped.
+    /// The flip is the value-exact, NaN-safe identity `if C then A else B ≡
+    /// if not C then B else A` realised by a structural `not`-wrap — it never
+    /// rewrites `not (k < 0)` into the NaN-unsafe `k >= 0`, so it is sound for any
+    /// condition. (Was `refuse_relational_guard_not_flipped` pre-P9.)
+    #[test]
+    fn relational_guard_is_polarity_flipped() {
         let obj = local("obj");
         let k = local("k");
         let body = vec![
@@ -3127,10 +3838,13 @@ mod tests {
             print_x(),
         ];
 
-        assert!(
-            match_value_prefixed(&candidate, 0, &t, false, &mut None).is_none(),
-            "relational guard condition must NOT be polarity-flipped"
-        );
+        // f(obj) = k=obj.Field; if k<0 then return false end; return k. The
+        // candidate computes v = (k2<0) ? false : k2 == f(obj). The flip negates
+        // the candidate's `k2<0` to `not (k2<0)` (NOT `k2>=0`) and swaps branches.
+        let hit = match_value_prefixed(&candidate, 0, &t, false, &mut None)
+            .expect("relational guard condition IS polarity-flipped under P9");
+        assert_eq!(hit.consume, 3); // prefix k2(0) + RESULT decl(1) + value-if(2)
+        assert_eq!(hit.result, Some(v));
     }
 
     /// Red-team: the polarity flip lines the diamond up correctly, but a leaf value
@@ -3320,14 +4034,71 @@ mod tests {
             prefix: false,
             parallel: false,
         });
-        assert!(collapse_use(&indexed, &v, &call).is_none());
+        let empty = FxHashSet::default();
+        assert!(collapse_use(&indexed, &v, &call, &empty).is_none());
 
         let x = local("x");
         let local_lhs = assign_local(&x, local_value(&v), false);
-        match collapse_use(&local_lhs, &v, &call).expect("local LHS must collapse") {
+        match collapse_use(&local_lhs, &v, &call, &empty).expect("local LHS must collapse") {
             Statement::Assign(a) => assert!(matches!(a.right[0], RValue::Call(_))),
             _ => panic!("expected an Assign"),
         }
+    }
+
+    /// P7-A regression: a multi-value helper (one whose binder is in `multivalue`)
+    /// must NOT be collapsed into a multi-value context. `local v = helper(args);
+    /// return v` keeps its form (a bare `return helper(args)` would propagate ALL of
+    /// the helper's values, where `local v =` truncated to one); same for a MULTI-LHS
+    /// `a, b = v`. Single-value contexts (`if v`, single-LHS `x = v`) still collapse.
+    #[test]
+    fn multivalue_helper_not_spread_into_multivalue_context_p7a() {
+        let helper = local("helper");
+        let v = local("v");
+        // call to the multi-value helper `helper(1)`.
+        let call = call1(local_value(&helper), number(1.0));
+        let mut multivalue = FxHashSet::default();
+        multivalue.insert(helper.clone());
+        let empty = FxHashSet::default();
+
+        // `return v` — multi-value context: refused for a multi-value helper,
+        // allowed (collapsed) for a scalar one.
+        let ret = Statement::Return(Return::new(vec![local_value(&v)]));
+        assert!(
+            collapse_use(&ret, &v, &call, &multivalue).is_none(),
+            "return v must NOT collapse a multi-value helper"
+        );
+        assert!(
+            collapse_use(&ret, &v, &call, &empty).is_some(),
+            "return v DOES collapse a scalar helper"
+        );
+
+        // MULTI-LHS `a, b = v` — multi-value context: refused for a multi-value helper.
+        let a = local("a");
+        let b = local("b");
+        let multi_lhs = Statement::Assign(Assign {
+            left: vec![LValue::Local(a.clone()), LValue::Local(b.clone())],
+            right: vec![local_value(&v)],
+            prefix: false,
+            parallel: false,
+        });
+        assert!(
+            collapse_use(&multi_lhs, &v, &call, &multivalue).is_none(),
+            "multi-LHS a,b = v must NOT collapse a multi-value helper"
+        );
+
+        // SINGLE-LHS `x = v` and `if v` stay sound (truncate to one value) even for
+        // a multi-value helper.
+        let x = local("x");
+        let single_lhs = assign_local(&x, local_value(&v), false);
+        assert!(
+            collapse_use(&single_lhs, &v, &call, &multivalue).is_some(),
+            "single-LHS x = v collapses even a multi-value helper (truncates)"
+        );
+        let if_v = if_stmt(local_value(&v), vec![print_x()], vec![]);
+        assert!(
+            collapse_use(&if_v, &v, &call, &multivalue).is_some(),
+            "if v collapses even a multi-value helper (single-value condition)"
+        );
     }
 
     /// F5: `body_unsafe` exempts our own reconstruction markers (so a callee body
@@ -3349,5 +4120,100 @@ mod tests {
         assert!(body_unsafe(&real_comment));
 
         assert_eq!(canon_top(&marked, true).len(), 1, "marker dropped by canon_top");
+    }
+
+    /// Exhaustive equivalence: `canon_top_len(stmts, tail) == canon_top(stmts, tail).len()`
+    /// over EVERY sequence of length 0..=4 from a canon-relevant alphabet (Empty /
+    /// internal-marker / source-comment trivia; plain / void-return / value-return
+    /// statements; foldable + several non-foldable guard shapes; a 2-value return), for
+    /// both tail values — ~41k cases. Computes the real length via `canon_top` directly
+    /// (independent of the in-function debug_assert), pinning the non-allocating length
+    /// mirror to `canon_top` even for release builds where the debug_assert is gone.
+    #[test]
+    fn canon_top_len_mirrors_canon_top_exhaustively() {
+        let make = |sym: u8| -> Statement {
+            match sym {
+                0 => Statement::Empty(Empty {}),
+                1 => Statement::Comment(Comment::trailing(CALL_MARKER.to_string())), // internal trivia
+                2 => Statement::Comment(Comment::new(" source".to_string())),        // NOT trivia
+                3 => print_x(),                                                       // plain stmt
+                4 => void_return(),                                                   // void return
+                5 => return_one(number(1.0)),                                         // value return
+                6 => if_stmt(global("c"), vec![void_return()], vec![]),               // foldable void guard
+                7 => if_stmt(global("c"), vec![return_one(number(2.0))], vec![]),     // foldable value guard
+                8 => if_stmt(global("c"), vec![void_return()], vec![print_x()]),      // else nonempty
+                9 => if_stmt(global("c"), vec![print_x(), void_return()], vec![]),    // then len 2
+                10 => if_stmt(global("c"), vec![print_x()], vec![]),                  // then non-return
+                _ => if_stmt(
+                    global("c"),
+                    vec![Statement::Return(Return::new(vec![number(1.0), number(2.0)]))],
+                    vec![],
+                ), // 2-value return then-block
+            }
+        };
+        const ALPHA: u8 = 12;
+        for len in 0..=4usize {
+            let mut idx = vec![0u8; len];
+            loop {
+                let stmts: Vec<Statement> = idx.iter().map(|&s| make(s)).collect();
+                for &tail in &[false, true] {
+                    assert_eq!(
+                        canon_top_len(&stmts, tail),
+                        canon_top(&stmts, tail).len(),
+                        "canon_top_len mismatch: tail={} seq={:?}",
+                        tail,
+                        idx
+                    );
+                }
+                if len == 0 {
+                    break;
+                }
+                let mut p = len - 1;
+                loop {
+                    idx[p] += 1;
+                    if idx[p] < ALPHA {
+                        break;
+                    }
+                    idx[p] = 0;
+                    if p == 0 {
+                        break;
+                    }
+                    p -= 1;
+                }
+                if idx.iter().all(|&x| x == 0) {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// P-perf prefilter: `stmt_anchor_key` must give EQUAL keys for equal fixed names
+    /// and DISTINCT keys for distinct names (a method name, or a global-call callee),
+    /// and `None` where there is no fixed name (a local-callee call, a non-call). This
+    /// is the contract the name prefilter relies on for false-negative freedom.
+    #[test]
+    fn stmt_anchor_key_contract() {
+        let recv = local("o");
+        let mc = |m: &str| {
+            Statement::MethodCall(MethodCall {
+                value: Box::new(local_value(&recv)),
+                method: m.to_string(),
+                arguments: vec![],
+            })
+        };
+        assert!(stmt_anchor_key(&mc("Foo")).is_some());
+        assert_eq!(stmt_anchor_key(&mc("Foo")), stmt_anchor_key(&mc("Foo")));
+        assert_ne!(stmt_anchor_key(&mc("Foo")), stmt_anchor_key(&mc("Bar")));
+
+        let gc = |g: &str| Statement::Call(Call::new(global(g), vec![]));
+        assert!(stmt_anchor_key(&gc("foo")).is_some());
+        assert_ne!(stmt_anchor_key(&gc("foo")), stmt_anchor_key(&gc("bar")));
+        // method vs global with same text are distinct (kind-tagged).
+        assert_ne!(stmt_anchor_key(&mc("foo")), stmt_anchor_key(&gc("foo")));
+
+        // no fixed name -> None (the prefilter then never skips).
+        assert!(stmt_anchor_key(&Statement::Call(Call::new(local_value(&recv), vec![]))).is_none());
+        assert!(stmt_anchor_key(&void_return()).is_none());
+        assert!(stmt_anchor_key(&print_x()).is_some()); // print(...) is a global call
     }
 }

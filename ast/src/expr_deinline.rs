@@ -173,9 +173,14 @@ fn collect_expr_targets(body: &Block) -> Vec<ExprTarget> {
             return;
         }
         let g = fa.lock();
-        // Named, fixed-arity, no goto/label/comment/close/for-init, NO nested
-        // closure (identity-matching closures is unsound).
-        if g.is_variadic || g.name.is_none() || body_unsafe(&g.body.0) {
+        // Fixed-arity, no goto/label/comment/close/for-init, NO nested closure
+        // (identity-matching closures is unsound). P5-A: the `g.name.is_none()`
+        // gate is dropped here too — `g.name` is only the bytecode debugname,
+        // never consumed by emission (the call uses `f_local`) or the formatter;
+        // the ANCHOR_FLOOR/NODE_COUNT_FLOOR cost gates below filter trivial
+        // helpers regardless of debugname. Variadic stays refused (unprovable
+        // arity in a multi-value slot).
+        if g.is_variadic || body_unsafe(&g.body.0) {
             return;
         }
         // The body must canonicalise to EXACTLY `return <one value>`. `canon` folds
@@ -229,7 +234,11 @@ fn collect_expr_targets(body: &Block) -> Vec<ExprTarget> {
 /// sites `deinline::collect_written` recognises (assignment LHS, numeric/generic
 /// `for` induction locals, `SetList` object) but accumulates counts. Runs once at
 /// collection time (cold), not in the matching hot path.
-fn collect_write_counts(stmts: &[Statement], out: &mut FxHashMap<RcLocal, usize>) {
+///
+/// `pub(crate)` so the statement de-inliner (`crate::deinline::collect_targets`,
+/// proposal P4) shares this single source of truth instead of copying it — the
+/// `stmt_rvalues` note below is load-bearing and two copies would drift.
+pub(crate) fn collect_write_counts(stmts: &[Statement], out: &mut FxHashMap<RcLocal, usize>) {
     for s in stmts {
         match s {
             Statement::Assign(a) => {
@@ -272,7 +281,7 @@ fn collect_write_counts(stmts: &[Statement], out: &mut FxHashMap<RcLocal, usize>
     }
 }
 
-fn write_counts_in_closures(rv: &RValue, out: &mut FxHashMap<RcLocal, usize>) {
+pub(crate) fn write_counts_in_closures(rv: &RValue, out: &mut FxHashMap<RcLocal, usize>) {
     if let RValue::Closure(c) = rv {
         collect_write_counts(&c.function.0.lock().body.0, out);
         return;
