@@ -168,8 +168,22 @@ impl Target {
 
 pub fn deinline(body: &mut Block) {
     let mut converted: FxHashSet<RcLocal> = FxHashSet::default();
+    // P4 perf: the write-once census is INVARIANT across fixed-point iterations for
+    // the only thing we query — TARGET BINDERS (a `local f = function…end` local,
+    // declared exactly once). De-inline emits reads of binders and writes to
+    // result-registers, never a new write to a function-local binder, and a target
+    // binder's own decl is never inside a removed region (`body_unsafe` refuses
+    // closure-bearing bodies). So a binder's queried write count never changes;
+    // compute the census ONCE here rather than re-traversing the whole module
+    // inside `collect_targets` on every iteration (the +50% regression P4 caused).
+    // Computing on the original body is also strictly CONSERVATIVE: de-inline only
+    // removes statements, so the effective count can only drop — meaning the once-
+    // map can over-refuse a pathological reassigned-then-inlined binder but can
+    // NEVER wrongly admit one.
+    let mut write_counts: FxHashMap<RcLocal, usize> = FxHashMap::default();
+    crate::expr_deinline::collect_write_counts(&body.0, &mut write_counts);
     loop {
-        let targets = collect_targets(body);
+        let targets = collect_targets(body, &write_counts);
         if targets.is_empty() {
             break;
         }
@@ -201,7 +215,16 @@ pub fn deinline(body: &mut Block) {
         }
     }
     if !converted.is_empty() {
-        collapse_value_results(&mut body.0);
+        // Binders of CONVERTED helpers that can return more than one value (a P7-A
+        // call-return leaf). `collapse_value_results` must not spread these into a
+        // multi-value context (see `collapse_use` / `body_has_call_return`).
+        let mut multivalue: FxHashSet<RcLocal> = FxHashSet::default();
+        each_closure_decl(&body.0, &mut |l, fa| {
+            if converted.contains(l) && body_has_call_return(&fa.lock().body.0) {
+                multivalue.insert(l.clone());
+            }
+        });
+        collapse_value_results(&mut body.0, &multivalue);
         insert_def_markers(&mut body.0, &converted);
     }
 }
@@ -266,22 +289,22 @@ fn nth_effective_index(stmts: &[Statement], from: usize, n: usize) -> Option<usi
         .map(|(idx, _)| idx)
 }
 
-fn collapse_value_results(stmts: &mut Vec<Statement>) {
+fn collapse_value_results(stmts: &mut Vec<Statement>, multivalue: &FxHashSet<RcLocal>) {
     // recurse into nested blocks and closure bodies first.
     for s in stmts.iter_mut() {
         match s {
             Statement::If(f) => {
-                collapse_value_results(&mut f.then_block.lock().0);
-                collapse_value_results(&mut f.else_block.lock().0);
+                collapse_value_results(&mut f.then_block.lock().0, multivalue);
+                collapse_value_results(&mut f.else_block.lock().0, multivalue);
             }
-            Statement::While(w) => collapse_value_results(&mut w.block.lock().0),
-            Statement::Repeat(r) => collapse_value_results(&mut r.block.lock().0),
-            Statement::NumericFor(nf) => collapse_value_results(&mut nf.block.lock().0),
-            Statement::GenericFor(gf) => collapse_value_results(&mut gf.block.lock().0),
+            Statement::While(w) => collapse_value_results(&mut w.block.lock().0, multivalue),
+            Statement::Repeat(r) => collapse_value_results(&mut r.block.lock().0, multivalue),
+            Statement::NumericFor(nf) => collapse_value_results(&mut nf.block.lock().0, multivalue),
+            Statement::GenericFor(gf) => collapse_value_results(&mut gf.block.lock().0, multivalue),
             _ => {}
         }
         for rv in stmt_rvalues_mut(s) {
-            collapse_in_closures(rv);
+            collapse_in_closures(rv, multivalue);
         }
     }
 
@@ -327,7 +350,7 @@ fn collapse_value_results(stmts: &mut Vec<Statement>) {
             // *written* anywhere we keep either — a later `v = ...` (e.g. inside
             // the collapsed `if`) would otherwise be left with no declaration.
             && last_write.get(&v).is_none_or(|&k| k < i + 2)
-            && let Some(collapsed) = collapse_use(&taken[i + 2], &v, call)
+            && let Some(collapsed) = collapse_use(&taken[i + 2], &v, call, multivalue)
         {
             // The reconstructed call now lives inside `collapsed`. For a
             // single-line `return f(args)` / `x = f(args)` the marker reads best
@@ -364,12 +387,28 @@ fn value_call_decl(a: &Assign) -> Option<(RcLocal, &RValue)> {
 /// If `s` uses `v` exactly in a leading, order-safe position (the whole `if`
 /// condition `v`/`not v`, the whole `return v`, or the whole assign RHS `= v`),
 /// returns `s` with `v` replaced by `call`. Otherwise `None`.
-fn collapse_use(s: &Statement, v: &RcLocal, call: &RValue) -> Option<Statement> {
+///
+/// `multivalue` holds the binders of helpers that can return MORE than one value
+/// (a P7-A call-return helper). For such a call, the MULTI-VALUE-context arms are
+/// refused — `return v` -> `return f(args)` (a tail call spreads all values) and a
+/// MULTI-LHS `a, b = v` -> `a, b = f(args)` would expose values the original
+/// single-LHS `local v = f(args)` had truncated away. Single-value contexts (an
+/// `if` condition, a SINGLE-LHS assign) truncate to one value either way and stay
+/// sound for every helper.
+fn collapse_use(
+    s: &Statement,
+    v: &RcLocal,
+    call: &RValue,
+    multivalue: &FxHashSet<RcLocal>,
+) -> Option<Statement> {
     let is_v = |rv: &RValue| matches!(rv, RValue::Local(x) if x == v);
     let is_not_v = |rv: &RValue| {
         matches!(rv, RValue::Unary(u)
             if u.operation == UnaryOperation::Not && is_v(&u.value))
     };
+    // Does the moved-in call target a multi-value helper? Then it must not be
+    // spread into a multi-value context.
+    let call_is_multivalue = call_callee_local(call).is_some_and(|l| multivalue.contains(l));
     match s {
         Statement::If(f) => {
             let cond = if is_v(&f.condition) {
@@ -388,7 +427,13 @@ fn collapse_use(s: &Statement, v: &RcLocal, call: &RValue) -> Option<Statement> 
                 else_block: f.else_block.clone(),
             }))
         }
-        Statement::Return(r) if r.values.len() == 1 && is_v(&r.values[0]) => {
+        // `return v` is a MULTI-VALUE (tail) context: `return f(args)` would
+        // propagate ALL of a multi-value helper's values, where `local v = f(args)`
+        // truncated to one. Refuse the collapse for such a helper (keep the sound
+        // `local v = f(args); return v`); scalar helpers collapse as before.
+        Statement::Return(r)
+            if r.values.len() == 1 && is_v(&r.values[0]) && !call_is_multivalue =>
+        {
             Some(Statement::Return(Return {
                 values: vec![call.clone()],
             }))
@@ -399,10 +444,15 @@ fn collapse_use(s: &Statement, v: &RcLocal, call: &RValue) -> Option<Statement> 
         // evaluates the prefix relative to the RHS call differently from the
         // pre-collapse `local v = f(); t[k] = v`, so it is only sound when `f`
         // leaves `t`/`k` untouched.
+        // A SINGLE-LHS `x = v` truncates the call to one value either way (sound for
+        // any helper); a MULTI-LHS `a, b = v` is a multi-value context, so refuse it
+        // for a multi-value helper (it would bind b/... to values the original
+        // single-LHS `local v = f(args)` truncated away).
         Statement::Assign(a)
             if a.right.len() == 1
                 && is_v(&a.right[0])
-                && a.left.iter().all(lvalue_safe_for_collapse) =>
+                && a.left.iter().all(lvalue_safe_for_collapse)
+                && (a.left.len() == 1 || !call_is_multivalue) =>
         {
             Some(Statement::Assign(Assign {
                 left: a.left.clone(),
@@ -425,6 +475,46 @@ fn collapse_use(s: &Statement, v: &RcLocal, call: &RValue) -> Option<Statement> 
 /// merges corpus-wide.
 fn lvalue_safe_for_collapse(l: &LValue) -> bool {
     matches!(l, LValue::Local(_) | LValue::Global(_))
+}
+
+/// The single local a reconstructed `helper(args)` call targets (`f` in
+/// `f(args)`), if the callee is a bare local — used to look the callee up in the
+/// multi-value-helper set during collapse.
+fn call_callee_local(call: &RValue) -> Option<&RcLocal> {
+    if let RValue::Call(c) = call {
+        if let RValue::Local(l) = c.value.as_ref() {
+            return Some(l);
+        }
+    }
+    None
+}
+
+/// Does any `return <expr>` in `stmts` (recursing into nested control-flow blocks
+/// but NOT into nested closures — their returns are not this function's) return a
+/// single NON-scalar value (a call / method-call / vararg / select)? Such a helper
+/// can yield MORE than one value when tail-called.
+///
+/// P7-A introduced Value targets with a call/method leaf (`return process(x)`),
+/// reconstructed soundly as the single-LHS, truncated `local RESULT = helper(args)`.
+/// But the cosmetic `collapse_value_results` pass would then spread that helper's
+/// values into a MULTI-VALUE context — `return RESULT` -> `return helper(args)` (a
+/// tail call propagates ALL values) or `a, b = RESULT` -> `a, b = helper(args)` —
+/// where the original truncated to exactly one. Pre-P7-A every Value helper was
+/// scalar (1-value), so the collapse was always sound; flagging call-return helpers
+/// here lets `collapse_use` refuse exactly the multi-value-context arms for them.
+fn body_has_call_return(stmts: &[Statement]) -> bool {
+    stmts.iter().any(|s| match s {
+        Statement::Return(r) => r.values.len() == 1 && !is_scalar_return_value(&r.values[0]),
+        Statement::If(f) => {
+            body_has_call_return(&f.then_block.lock().0)
+                || body_has_call_return(&f.else_block.lock().0)
+        }
+        Statement::While(w) => body_has_call_return(&w.block.lock().0),
+        Statement::Repeat(r) => body_has_call_return(&r.block.lock().0),
+        Statement::NumericFor(nf) => body_has_call_return(&nf.block.lock().0),
+        Statement::GenericFor(gf) => body_has_call_return(&gf.block.lock().0),
+        _ => false,
+    })
 }
 
 fn count_local_reads(stmts: &[Statement], v: &RcLocal) -> usize {
@@ -646,17 +736,17 @@ fn tail_has_live(
         .any(|v| idx.get(v).is_some_and(|&k| k >= tail_start))
 }
 
-fn collapse_in_closures(rv: &mut RValue) {
+fn collapse_in_closures(rv: &mut RValue, multivalue: &FxHashSet<RcLocal>) {
     // Find every closure within `rv` and run the collapse inside its body. Descent
     // uses the enum_dispatch `Traverse::rvalues_mut` (exhaustive by construction, so
     // it can never silently drop a new RValue variant — incl. `IfExpression`),
     // mirroring `expr_deinline::write_counts_in_closures`.
     if let RValue::Closure(c) = rv {
-        collapse_value_results(&mut c.function.0.lock().body.0);
+        collapse_value_results(&mut c.function.0.lock().body.0, multivalue);
         return;
     }
     for child in rv.rvalues_mut() {
-        collapse_in_closures(child);
+        collapse_in_closures(child, multivalue);
     }
 }
 
@@ -853,6 +943,68 @@ fn unguard(mut stmts: Vec<Statement>) -> Vec<Statement> {
         i += 1;
     }
     out
+}
+
+/// The foldable-guard shape `unguard` collapses: `if cond then return [X] end`
+/// (empty else, then-block a single 0-or-1-value return). Factored out so
+/// `canon_top_len` computes the post-unguard length using the EXACT same predicate
+/// `unguard` folds on (no drift); `canon_top_len`'s debug_assert cross-checks the
+/// whole length against the real `canon_top`.
+fn is_foldable_guard(s: &Statement) -> bool {
+    if let Statement::If(f) = s {
+        let then = f.then_block.lock();
+        let els = f.else_block.lock();
+        els.0.is_empty()
+            && then.0.len() == 1
+            && matches!(&then.0[0], Statement::Return(r) if r.values.len() <= 1)
+    } else {
+        false
+    }
+}
+
+/// `canon_top(stmts, tail).len()` WITHOUT allocating the canon'd Vec — a hot-path
+/// pre-filter so the per-width matcher loops pay the `canon_top` + `canon_recurse`
+/// allocations only on a window whose canon'd length actually equals the pattern
+/// length (the common case in the width scan is a NON-match). Mirrors `canon_top`
+/// exactly: count non-trivia (N2); at tail, drop a trailing void return (N1) then
+/// apply `unguard`'s length effect (N3 — the FIRST foldable guard that has a
+/// following effective statement folds everything after it into one `If`, so the
+/// length becomes that guard's index + 1; otherwise no change). The debug_assert
+/// pins it to the real `canon_top` length in debug / test builds.
+fn canon_top_len(stmts: &[Statement], tail: bool) -> usize {
+    let total = stmts.iter().filter(|s| !is_match_trivia(s)).count();
+    let n = if !tail || total == 0 {
+        total
+    } else {
+        // N1: drop a trailing void return (the LAST non-trivia statement).
+        let last_void = stmts
+            .iter()
+            .rev()
+            .find(|s| !is_match_trivia(s))
+            .is_some_and(|s| matches!(s, Statement::Return(r) if r.values.is_empty()));
+        let effective = total - usize::from(last_void);
+        // N3: unguard folds at the first foldable guard that has a following
+        // (within-`effective`) statement -> top-level length is its index + 1.
+        let mut len = effective;
+        for (idx, s) in stmts
+            .iter()
+            .filter(|s| !is_match_trivia(s))
+            .take(effective)
+            .enumerate()
+        {
+            if idx + 1 < effective && is_foldable_guard(s) {
+                len = idx + 1;
+                break;
+            }
+        }
+        len
+    };
+    debug_assert_eq!(
+        n,
+        canon_top(stmts, tail).len(),
+        "canon_top_len must mirror canon_top length exactly"
+    );
+    n
 }
 
 // ===================================================================
@@ -1837,9 +1989,9 @@ fn match_void(
         // paying for the deep nested-block rebuild (`canon_recurse`).
         let plain_blocked = block_has_return(raw) && !(is_func_tail && i + w == stmts.len());
         if !plain_blocked {
-            let plain_top = canon_top(raw, true);
-            if plain_top.len() == kc {
-                let plain = canon_recurse(plain_top, true);
+            // Cheap non-allocating length pre-check before the canon allocations.
+            if canon_top_len(raw, true) == kc {
+                let plain = canon_recurse(canon_top(raw, true), true);
                 if let Some(u) = try_unify_site(t, &plain) {
                     // every callee-temp must be dead after the consumed window, else
                     // a later use would reference a now-removed declaration.
@@ -1853,9 +2005,8 @@ fn match_void(
         // tail, its void early-returns lowered to the caller's tail `return RET`.
         if let Some(ret) = value_tail_ret(stmts, i, w, is_func_tail) {
             let rewritten = rewrite_return_to_void(raw, &ret);
-            let folded_top = canon_top(&rewritten, true);
-            if folded_top.len() == kc {
-                let folded = canon_recurse(folded_top, true);
+            if canon_top_len(&rewritten, true) == kc {
+                let folded = canon_recurse(canon_top(&rewritten, true), true);
                 if let Some(u) = try_unify_site(t, &folded) {
                     if !tail_has_live(last_occ, stmts, i, i + w, &u.callee_locals) {
                         record_site(&mut site, &mut ambiguous, w, &u.args);
@@ -1904,12 +2055,11 @@ fn match_value(
         if block_has_return(region) {
             continue;
         }
-        // Reject by cheap top-level canon length before the deep rebuild.
-        let cwin_top = canon_top(region, true);
-        if cwin_top.len() != kc {
+        // Reject by cheap (non-allocating) top-level canon length before the deep rebuild.
+        if canon_top_len(region, true) != kc {
             continue;
         }
-        let cwin = canon_recurse(cwin_top, true);
+        let cwin = canon_recurse(canon_top(region, true), true);
         if let Some(u) = try_unify_site(t, &cwin) {
             // RESULT must be exactly the declared local and only written (never
             // read) inside the region, so the region is its full computation.
@@ -2000,12 +2150,11 @@ fn match_value_prefixed(
         let mut union: Vec<Statement> = Vec::with_capacity(p + w);
         union.extend_from_slice(prefix);
         union.extend_from_slice(region);
-        // cheap top-level canon length reject BEFORE the deep nested-block rebuild.
-        let utop = canon_top(&union, true);
-        if utop.len() != kc {
+        // cheap (non-allocating) top-level canon length reject BEFORE the deep rebuild.
+        if canon_top_len(&union, true) != kc {
             continue;
         }
-        let cwin = canon_recurse(utop, true);
+        let cwin = canon_recurse(canon_top(&union, true), true);
         if let Some(u) = try_unify_site(t, &cwin) {
             // RESULT must be exactly the interposed decl, written-only inside the
             // union (its full computation), NOT also a callee-prefix binder (the
@@ -2147,9 +2296,10 @@ fn args_vec_eq(a: &[RValue], b: &[RValue]) -> bool {
 // Target collection + per-function gates
 // ===================================================================
 
-fn collect_targets(body: &Block) -> Vec<Target> {
-    // P4: write-once census replaces the old `Arc::count(&l) == 1` gate. The
-    // refcount gate was both too STRICT (it dropped any helper that still has a
+fn collect_targets(body: &Block, write_counts: &FxHashMap<RcLocal, usize>) -> Vec<Target> {
+    // P4: a write-once census (`write_counts`, computed once by the caller — see the
+    // invariance note in `deinline`) replaces the old `Arc::count(&l) == 1` gate.
+    // The refcount gate was both too STRICT (it dropped any helper that still has a
     // surviving direct call `f(...)`, since each call-site `RValue::Local(f)`
     // raises the count) and UNSTABLE across the fixed-point loop (the first
     // emitted `f(args)` clones the binder, so a multi-site target's count rises
@@ -2158,12 +2308,9 @@ fn collect_targets(body: &Block) -> Vec<Target> {
     // the binder: a binder assigned only by its own `local f = function…end`
     // declaration (write_count == 1) is never reassigned, so an emitted `f(args)`
     // always resolves to this function — sound regardless of how many times `f`
-    // is read/called elsewhere. This mirrors the §7 expression de-inliner's
-    // proven gate (`expr_deinline::collect_expr_targets`); the census is shared
-    // (not copied) so the two cannot drift. Cold: computed once per module.
-    let mut write_counts: FxHashMap<RcLocal, usize> = FxHashMap::default();
-    crate::expr_deinline::collect_write_counts(&body.0, &mut write_counts);
-
+    // is read/called elsewhere. Mirrors the §7 expression de-inliner's proven gate
+    // (`expr_deinline::collect_expr_targets`); the census is shared (not copied) so
+    // the two cannot drift.
     let mut decls: Vec<(RcLocal, Arc<Mutex<Function>>)> = Vec::new();
     each_closure_decl(&body.0, &mut |l, fa| {
         decls.push((l.clone(), fa.clone()));
@@ -3828,14 +3975,71 @@ mod tests {
             prefix: false,
             parallel: false,
         });
-        assert!(collapse_use(&indexed, &v, &call).is_none());
+        let empty = FxHashSet::default();
+        assert!(collapse_use(&indexed, &v, &call, &empty).is_none());
 
         let x = local("x");
         let local_lhs = assign_local(&x, local_value(&v), false);
-        match collapse_use(&local_lhs, &v, &call).expect("local LHS must collapse") {
+        match collapse_use(&local_lhs, &v, &call, &empty).expect("local LHS must collapse") {
             Statement::Assign(a) => assert!(matches!(a.right[0], RValue::Call(_))),
             _ => panic!("expected an Assign"),
         }
+    }
+
+    /// P7-A regression: a multi-value helper (one whose binder is in `multivalue`)
+    /// must NOT be collapsed into a multi-value context. `local v = helper(args);
+    /// return v` keeps its form (a bare `return helper(args)` would propagate ALL of
+    /// the helper's values, where `local v =` truncated to one); same for a MULTI-LHS
+    /// `a, b = v`. Single-value contexts (`if v`, single-LHS `x = v`) still collapse.
+    #[test]
+    fn multivalue_helper_not_spread_into_multivalue_context_p7a() {
+        let helper = local("helper");
+        let v = local("v");
+        // call to the multi-value helper `helper(1)`.
+        let call = call1(local_value(&helper), number(1.0));
+        let mut multivalue = FxHashSet::default();
+        multivalue.insert(helper.clone());
+        let empty = FxHashSet::default();
+
+        // `return v` — multi-value context: refused for a multi-value helper,
+        // allowed (collapsed) for a scalar one.
+        let ret = Statement::Return(Return::new(vec![local_value(&v)]));
+        assert!(
+            collapse_use(&ret, &v, &call, &multivalue).is_none(),
+            "return v must NOT collapse a multi-value helper"
+        );
+        assert!(
+            collapse_use(&ret, &v, &call, &empty).is_some(),
+            "return v DOES collapse a scalar helper"
+        );
+
+        // MULTI-LHS `a, b = v` — multi-value context: refused for a multi-value helper.
+        let a = local("a");
+        let b = local("b");
+        let multi_lhs = Statement::Assign(Assign {
+            left: vec![LValue::Local(a.clone()), LValue::Local(b.clone())],
+            right: vec![local_value(&v)],
+            prefix: false,
+            parallel: false,
+        });
+        assert!(
+            collapse_use(&multi_lhs, &v, &call, &multivalue).is_none(),
+            "multi-LHS a,b = v must NOT collapse a multi-value helper"
+        );
+
+        // SINGLE-LHS `x = v` and `if v` stay sound (truncate to one value) even for
+        // a multi-value helper.
+        let x = local("x");
+        let single_lhs = assign_local(&x, local_value(&v), false);
+        assert!(
+            collapse_use(&single_lhs, &v, &call, &multivalue).is_some(),
+            "single-LHS x = v collapses even a multi-value helper (truncates)"
+        );
+        let if_v = if_stmt(local_value(&v), vec![print_x()], vec![]);
+        assert!(
+            collapse_use(&if_v, &v, &call, &multivalue).is_some(),
+            "if v collapses even a multi-value helper (single-value condition)"
+        );
     }
 
     /// F5: `body_unsafe` exempts our own reconstruction markers (so a callee body
