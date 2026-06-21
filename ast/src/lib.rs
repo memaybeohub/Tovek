@@ -34,6 +34,7 @@ pub mod conditional_expressions;
 pub mod copy_cleanup;
 pub mod eliminate_nil;
 pub mod local_declarations;
+pub mod materialize_value_captures;
 pub mod name_locals;
 mod repeat;
 pub mod simplify_gotos;

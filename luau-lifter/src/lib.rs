@@ -212,6 +212,12 @@ pub fn try_decompile_bytecode_with_script_name(
             link_upvalues(&mut body, &mut upvalues);
             ast::deinline::deinline(&mut body);
             ast::cleanup_returns::cleanup_redundant_returns(&mut body);
+            // Restore the per-iteration snapshot of a by-value (`Upvalue::Copy`)
+            // capture that out-of-SSA coalescing merged onto a mutated (loop)
+            // variable (C6). Runs before `name_locals` so the `local snap = L` it
+            // mints gets named, and before `inline_temps`/`copy_cleanup` (which then
+            // protect it as a captured local).
+            ast::materialize_value_captures::materialize_value_captures(&mut body);
             name_locals_with_script_name(&mut body, true, script_name);
             // §2.8: recover OOP colon-method definitions. Runs after name_locals
             // (so first params are named `p`/`pN`) and before inline_temps (whose
