@@ -1,23 +1,25 @@
 # Decompiler correctness audit — confirmed findings
 
 > ## FIX STATUS (branch `fix/decompiler-correctness`)
-> **Shipped & validated (16):** C1, C2, C2b, C3, **C4**, C5, C7, C8, C9, C10, C11,
-> C12, L1, L2, L4, L6. Each: per-bug differential repro PASS, all unit tests green,
-> 275/275 corpus files parse, full 863-program harness with no new regression
-> family (final count **11 mismatches, 0 decompile failures**, down from 63). A
-> final adversarial review found one residual C10 hole (window blind to nested-block
-> reads) — fixed. C4 was fixed via a self-phi removal SCOPED to upvalue-cell loop
-> phis (28→11 mismatches, AuraUI intact) after two unscoped versions regressed.
+> **Shipped & validated (17):** C1, C2, C2b, C3, **C4**, C5, **C6**, C7, C8, C9,
+> C10, C11, C12, L1, L2, L4, L6. Each: per-bug differential repro PASS, unit tests
+> green, 275/275 corpus files parse, full 863-program harness with no new regression
+> family (final count **5 mismatches, 0 decompile failures**, down from 63). C4 was
+> fixed via a self-phi removal SCOPED to upvalue-cell loop phis; C6 via a new
+> AST-level pass that re-materializes the per-iteration snapshot of a value capture
+> (both after several SSA-level attempts regressed — the lesson each time was that
+> SSA coalescing-avoidance fights the restructurer/out-of-SSA passes).
 >
-> **Deferred (2) — NOT shipped because every attempted fix introduced a new bug:**
-> **C6** (per-iteration by-value capture; 4 attempts: register conflation / AuraUI
-> invalid / clobbering out-of-SSA write-backs — see Progress.md) and **C13**
-> (`local _ = expr` drops a live captured-cell write; the orphaned write version is
-> a distinct `RcLocal` never unified into the cell). Both need *version-granular*
-> upvalue-cell membership — the value-capture / written-version modelled as its own
-> per-iteration cell — coherent across UpvaluesOpen/mark_upvalues/propagate_copies/
-> coalesce_copies/sequentialize AND validated against the full-corpus PARSE.
-> Intentionally skipped: L3, L5 (runtime-only JIT ops), set_list (unsound rewrite).
+> **Deferred (1): C13** — `local _ = expr` drops a live captured-cell write in one
+> rare corpus file (HangingPlacement's self-disconnecting handler). The connect
+> result's SSA version is orphaned (a distinct `RcLocal` flowing into a dead
+> post-merge phi under register-reuse / `Close` boundaries) instead of being unified
+> into the captured cell. A sound fix is a *forward* extension of the upvalue-cell
+> open range — in the area `extend_open_backward` is DELIBERATELY conservative about
+> to avoid absorbing unrelated register-reuse values — and it CANNOT be reproduced
+> minimally (5 attempts), so it cannot be iterated/validated without risking the
+> "no new bugs" guarantee. Intentionally skipped: L3, L5 (runtime-only JIT ops),
+> set_list (unsound rewrite).
 
 Method: differential harness. source --luau-compile -O{0,1,2}--> v11 bytecode --luau-lifter--> Luau --luau.exe--> output.
 A divergence in printed output = confirmed semantic bug. Binary: D:/Medal/medal-decompiler/target/release/luau-lifter.exe @ HEAD 1b8614e.

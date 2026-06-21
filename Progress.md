@@ -24,6 +24,7 @@ be unsound and were NOT shipped as proposed.
 | C3 | loop-carried parallel copy: pre-spill destination-reading RHS | `cfg/ssa/destruct.rs` | repro Fibonacci; corpus byte-identical |
 | C4 | remove a by-ref upvalue cell's trivial loop phi (SCOPED to cells) | `cfg/ssa/construct.rs` | repro `state` 15; harness 28→11; AuraUI intact |
 | C5 | wrap a trailing multret `Select` in `(…)` in return position | `ast/formatter.rs` | repro; faithful `return (call())` |
+| C6 | materialize a loop-mutated by-value capture as a per-iteration snapshot | `ast/materialize_value_captures.rs` (NEW) | repro 1,2,3; harness 11→5; AuraUI intact |
 | C7 | don't collapse a return-diamond whose arm is a multret tail | `cfg/ssa/structuring.rs` | repro tcount 3 |
 | C8 | `for…do break end` no longer drops the whole function | `restructure/loop.rs`, `luau-lifter/lifter.rs` | repro O0/O1/O2 |
 | C9 | inliner closes the side-effect window on a group-write skip | `cfg/ssa/inline.rs` | repro order A,B7; corpus byte-identical |
@@ -52,17 +53,14 @@ documented with the precise root cause pinned during the attempts:
   207 gotos) and relaxing the `coalesce_copies` same-group guard (49 mismatches +
   6 crashes — same-group cell versions can interfere).
 
-- **C6** (per-iteration by-value capture collapsed onto the loop var). FOUR
-  attempts, all regressed: (1) `mark_upvalues` Copy-open → register conflation, 6
-  harness fails. (2) two-guard for all value-captures → AuraUI invalid (table
-  accumulator). (3) two-guard scoped to "captured-only" (read only by the closure)
-  → fixed the repro AND kept AuraUI valid, BUT 58 harness mismatches: preserving a
-  value-capture whose source is loop-carried forces an out-of-SSA write-back
-  `X = v3` that CLOBBERS any modification of `X` in the loop body. The fundamental
-  conflict: a value-capture must stay a fresh per-iteration binding, but the
-  out-of-SSA sequentializer re-introduces the loop-carried copy as a destructive
-  round-trip. Needs the value-capture to be modelled as its OWN cell with its own
-  per-iteration materialization, not merely protected from coalescing.
+- **C6** — NOW FIXED (see table above). After FOUR SSA-level attempts all regressed
+  (register conflation / AuraUI-invalid / clobbering out-of-SSA write-backs), the
+  winning approach abandons SSA coalescing-avoidance entirely and fixes it at the
+  AST level: `materialize_value_captures` re-introduces the lost per-iteration
+  snapshot (`local snap = L; closure reads snap`) for a `Copy` capture of a
+  loop-mutated local. A value capture IS a snapshot, so it is exact; loop-scoped so
+  stable upvalues are untouched; and `snap` is itself captured so inline/cleanup
+  leave it. Harness 11→5, DECFAIL=0, closures-upval eliminated, AuraUI intact.
 
 - **C13** (`local _ = expr` drops a live write to a closure-captured / self-updated
   local). The researched phi-passthrough is unsound (it splits a genuine merge and
