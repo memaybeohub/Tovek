@@ -37,12 +37,19 @@ be unsound and were NOT shipped as proposed.
 | L4 | non-JUMPX E-form op degrades to a comment, not a panic | `luau-lifter/lifter.rs` | corpus byte-identical |
 | L5 | NATIVECALL decoded as ABC (was AD, scrambling A/B/C) | `luau-lifter/instruction.rs`, `lifter.rs` | corpus byte-identical |
 | L6 | string constant index 0 decodes to "" instead of underflow panic | `luau-lifter/lifter.rs` | corpus byte-identical |
+| (extra) | keyed multret table entry stays truncated when its `[i]=` key is dropped | `ast/formatter.rs` | gen2 repro 3/3; corpus byte-identical |
 
-The whole-program differential harness went from **63 → 5 mismatches** with
-**0 decompile failures**; the v9 corpus stays **275/275 parseable**. The 5
-residual mismatches are gen2 adversarial stress-tests (coro upvalues, shared-upval-
-two-loops, contrived nested-break, keyed/multret-in-constructor, call-as-table-key)
-— NONE is one of the documented C/L findings.
+The whole-program differential harness went from **63 → 4 mismatches** with
+**0 decompile failures**; the v9 corpus stays **275/275 parseable**. The 4
+residual mismatches are gen2 adversarial stress-tests, **NONE a documented C/L
+finding**, each a deep separate root diagnosed but not yet fixed:
+- `coro_closure_upval_mutate`, `coro_upvalue_after_loop` — O2-only; aggressive
+  coroutine+upvalue optimization the lifter mishandles (correct at O0/O1).
+- `nestedctrl_while_with_inner_for_break` — restructurer falls back to `goto`
+  (invalid Luau) on a contrived while-with-inner-for-break (C12-adjacent).
+- `upval-stress-shared-upval-two-loops` — a snapshot `local mid = total` of a
+  by-ref upvalue cell is dropped when the mutation is a LOOP (kept correctly for a
+  direct call): a cross-block side-effect gap in the SSA inliner/coalescer.
 
 ## Cluster notes — C4/C6 fixed at the root, C13 verified a non-bug
 
