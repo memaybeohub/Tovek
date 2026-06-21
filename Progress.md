@@ -22,6 +22,7 @@ be unsound and were NOT shipped as proposed.
 | C2 | mixed keyed+positional table keeps explicit keys | `ast/formatter.rs` | repro `a b 2` |
 | C2b | non-integral/out-of-range numeric keys not dropped (no `usize` cast) | `ast/formatter.rs` | repro `zero nil 0` |
 | C3 | loop-carried parallel copy: pre-spill destination-reading RHS | `cfg/ssa/destruct.rs` | repro Fibonacci; corpus byte-identical |
+| C4 | remove a by-ref upvalue cell's trivial loop phi (SCOPED to cells) | `cfg/ssa/construct.rs` | repro `state` 15; harness 28→11; AuraUI intact |
 | C5 | wrap a trailing multret `Select` in `(…)` in return position | `ast/formatter.rs` | repro; faithful `return (call())` |
 | C7 | don't collapse a return-diamond whose arm is a multret tail | `cfg/ssa/structuring.rs` | repro tcount 3 |
 | C8 | `for…do break end` no longer drops the whole function | `restructure/loop.rs`, `luau-lifter/lifter.rs` | repro O0/O1/O2 |
@@ -43,26 +44,25 @@ These three share one root and each researched/attempted fix introduced a NEW
 bug, so none was shipped (the "no new bugs" requirement is absolute). Each is
 documented with the precise root cause pinned during the attempts:
 
-- **C4** (stale by-ref upvalue snapshot after a loop). Fix attempted & briefly
-  committed: `remove_unnecessary_params` excludes the self back-edge arg so the
-  trivial loop phi `p = phi(x, p)` is removed. It fixed the repro (`state` 15) and
-  cut the harness 63→10, but **removing a loop-header phi is incompatible with the
-  restructurer on complex CFGs**: `Client/UI/AuraUI.luau` became fully
-  unstructurable (207 `goto` fallbacks → invalid Luau, 274/275 parseable).
-  Reverted. Needs a phi-PRESERVING approach (open-upvalue back-edge propagation in
-  `UpvaluesOpen::new`, or dropping the upvalue-grouped trivial self-copy in
-  `coalesce_copies`).
+- **C4** — NOW FIXED (see table above). The winning approach: keep the
+  self-back-edge exclusion in `remove_unnecessary_params` but SCOPE it to upvalue-
+  cell loop phis only (detected by an incoming arg being a grouped cell version),
+  so the non-upvalue loop phis the restructurer needs are untouched and AuraUI
+  stays valid. Two earlier approaches regressed first: unscoped phi removal (AuraUI
+  207 gotos) and relaxing the `coalesce_copies` same-group guard (49 mismatches +
+  6 crashes — same-group cell versions can interfere).
 
-- **C6** (per-iteration by-value capture collapsed onto the loop var). Two
-  attempts, both regressed: (1) marking the `Upvalue::Copy` as open in
-  `mark_upvalues` groups the WHOLE bytecode register (one register → one
-  `old_local`), conflating register-reuse values → 6 closures-upval harness
-  programs broke ("attempt to get length of a function value"). (2) A
-  conflation-free two-guard version (refuse the copy in `propagate_copies` +
-  refuse the coalesce in destruct, keyed by the value-captured local) fixed the
-  repro (`1,2,3`) but **preserving the value-capture copy of a table accumulator
-  produced loop-carried copies the restructurer mangled into invalid Luau** in
-  `AuraUI.luau` (parse failure).
+- **C6** (per-iteration by-value capture collapsed onto the loop var). FOUR
+  attempts, all regressed: (1) `mark_upvalues` Copy-open → register conflation, 6
+  harness fails. (2) two-guard for all value-captures → AuraUI invalid (table
+  accumulator). (3) two-guard scoped to "captured-only" (read only by the closure)
+  → fixed the repro AND kept AuraUI valid, BUT 58 harness mismatches: preserving a
+  value-capture whose source is loop-carried forces an out-of-SSA write-back
+  `X = v3` that CLOBBERS any modification of `X` in the loop body. The fundamental
+  conflict: a value-capture must stay a fresh per-iteration binding, but the
+  out-of-SSA sequentializer re-introduces the loop-carried copy as a destructive
+  round-trip. Needs the value-capture to be modelled as its OWN cell with its own
+  per-iteration materialization, not merely protected from coalescing.
 
 - **C13** (`local _ = expr` drops a live write to a closure-captured / self-updated
   local). The researched phi-passthrough is unsound (it splits a genuine merge and
