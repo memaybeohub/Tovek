@@ -1,8 +1,11 @@
+use by_address::ByAddress;
+use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHashSet};
+use triomphe::Arc;
 
 use crate::{
-    replace_locals::replace_locals, Assign, Block, LocalRw, RValue, RcLocal, Statement, Traverse,
-    Upvalue,
+    replace_locals::replace_locals, simplify_gotos::dc_block, Assign, Block, Function, LocalRw,
+    RValue, RcLocal, Statement, Traverse, Upvalue,
 };
 
 /// Materialize a by-value (`Upvalue::Copy`) capture of a LOOP-MUTATED local as an
@@ -140,6 +143,37 @@ fn snapshot_value_captures(
                     _ => None,
                 })
                 .collect();
+            // De-inline duplicates a region by SHALLOW-cloning the `RValue::Closure`,
+            // so sibling duplicates SHARE one `Arc<Mutex<Function>>` body
+            // (`closure.rs` `function: ByAddress<Arc<Mutex<Function>>>`) while each keeps
+            // its own `upvalues` Vec and enclosing block. The snapshot below mutates the
+            // body (`replace_locals` L->snap) but inserts the `local snap = L` decl + the
+            // upvalue swap into THIS instance only — so a shared body would leak the
+            // rename into the sibling, which never receives the decl, leaving it reading
+            // an undeclared `snap` (the C6 "Unknown global vN" regression). Give this
+            // instance its OWN body first: a deep clone (`dc_block` rebuilds nested
+            // `Arc<Mutex<Block>>` sub-blocks). `RcLocal` identities stay shared, so the
+            // capture semantics are unchanged. (A capture read strictly inside a nested
+            // closure of this body is a known residual `dc_block` does not cover — nested
+            // closure Arcs can't be re-minted without panicking a later `Arc::as_ptr`
+            // lookup; it has no corpus occurrence and is strictly better than pre-fix.)
+            // Gated on a shared Arc so a genuine
+            // per-iteration loop closure (`strong_count == 1`, C6's real target) is
+            // byte-identical to before. (Pass order: this runs after `deinline` and after
+            // the recursive descent into closure bodies above, so the only live holders
+            // of this Arc are the sibling duplicate statements — not a same-pass artifact.)
+            if !to_snapshot.is_empty() && Arc::strong_count(&closure.function.0) > 1 {
+                let cloned = {
+                    let f = closure.function.0.lock();
+                    Function {
+                        name: f.name.clone(),
+                        parameters: f.parameters.clone(),
+                        is_variadic: f.is_variadic,
+                        body: dc_block(&f.body),
+                    }
+                };
+                closure.function = ByAddress(Arc::new(Mutex::new(cloned)));
+            }
             for (upvalue_index, local) in to_snapshot {
                 let snap = RcLocal::default();
                 let mut map: FxHashMap<RcLocal, RcLocal> = FxHashMap::default();
