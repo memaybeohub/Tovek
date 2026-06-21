@@ -33,17 +33,22 @@ be unsound and were NOT shipped as proposed.
 | C12 | keep a middle loop's break in deeply-nested multi-break loops | `restructure/loop.rs` | repro count 18; corpus byte-identical |
 | L1 | LOADB C>1 wires the correct (unsigned I+1+C) CFG edge, no panic | `luau-lifter/lifter.rs` | corpus byte-identical |
 | L2 | LOADKX lifts (was `unreachable!` aborting the proto) | `luau-lifter/lifter.rs` | corpus byte-identical |
+| L3 | CMPPROTO preserves its `d` jump edge (two-way conditional when D≠0) | `luau-lifter/lifter.rs` | corpus byte-identical; 13/13 repro |
 | L4 | non-JUMPX E-form op degrades to a comment, not a panic | `luau-lifter/lifter.rs` | corpus byte-identical |
+| L5 | NATIVECALL decoded as ABC (was AD, scrambling A/B/C) | `luau-lifter/instruction.rs`, `lifter.rs` | corpus byte-identical |
 | L6 | string constant index 0 decodes to "" instead of underflow panic | `luau-lifter/lifter.rs` | corpus byte-identical |
 
-The whole-program differential harness went from **63 → ~?? mismatches** with
-**0 decompile failures**; the v9 corpus stays **275/275 parseable**.
+The whole-program differential harness went from **63 → 5 mismatches** with
+**0 decompile failures**; the v9 corpus stays **275/275 parseable**. The 5
+residual mismatches are gen2 adversarial stress-tests (coro upvalues, shared-upval-
+two-loops, contrived nested-break, keyed/multret-in-constructor, call-as-table-key)
+— NONE is one of the documented C/L findings.
 
-## Deferred — the SSA capture/sequencing cluster (researched + ATTEMPTED, every fix regressed)
+## Cluster notes — C4/C6 fixed at the root, C13 verified a non-bug
 
-These three share one root and each researched/attempted fix introduced a NEW
-bug, so none was shipped (the "no new bugs" requirement is absolute). Each is
-documented with the precise root cause pinned during the attempts:
+C4 and C6 each took several attempts (documented below); C13 was investigated to a
+bytecode-level proof that it is a misdiagnosis. Every subagent finding was verified,
+not trusted.
 
 - **C4** — NOW FIXED (see table above). The winning approach: keep the
   self-back-edge exclusion in `remove_unnecessary_params` but SCOPE it to upvalue-
@@ -62,23 +67,23 @@ documented with the precise root cause pinned during the attempts:
   stable upvalues are untouched; and `snap` is itself captured so inline/cleanup
   leave it. Harness 11→5, DECFAIL=0, closures-upval eliminated, AuraUI intact.
 
-- **C13** (`local _ = expr` drops a live write to a closure-captured / self-updated
-  local). The researched phi-passthrough is unsound (it splits a genuine merge and
-  force-materializes a `nil` default). The TRUE trigger is register reuse: the
-  orphaned write is the connect-WRITE version, a distinct `RcLocal` from the cell
-  the closure reads (NEWCLOSURE precedes the assigning CALL), so it is never
-  unified into the cell. Needs version-level unification, not a name rename.
+- **C13** — VERIFIED A MISDIAGNOSIS at the bytecode level (not a decompiler bug).
+  Lifter instrumentation correlating each `:Connect` result register with closure
+  ref-captured registers shows HangingPlacement (the sole instance) has **0
+  collisions** — the connection result is in a register no closure captures, so it
+  is NOT `v22`. The dead `local _` proves no hidden `v22 = result` move; the
+  connection is genuinely discarded in the obfuscated original (a real leak there,
+  faithfully reproduced). Corpus-wide: exactly ONE `local _ = …:Connect` (this one),
+  while all 138 cases where a connection IS in a captured register decompile
+  correctly to `cell = …:Connect`. Both facets (a closure-capture, b self-update
+  `x=x+1` / guarded default) also tested and decompile correctly. The review's
+  "should be `v22 = …`" was an inference the bytecode disproves.
 
-Common root: the lifter maps one bytecode register to one `old_local`, so the SSA
-upvalue-cell membership is register-granular. A correct fix for the cluster needs
-*version-granular* cell membership coherent across `UpvaluesOpen`/`mark_upvalues`
-/ `propagate_copies` / `coalesce_copies` AND tolerant of the restructurer — a
-larger change that must be validated against the FULL 275-file corpus *parse*
-(not just the differential harness, which tests generated programs, not corpus
-syntactic validity — the trap C4 fell into).
-
-- **L3 (CMPPROTO), L5 (NATIVECALL)**: runtime-only JIT pseudo-ops that never
-  appear in serialized bytecode, so the hardening value is ~0 while L5's decode
-  re-form and L3's two-way CFG rewrite carry real corpus-regression risk — not a
-  sound trade. **set_list multret tail**: the verify pass found the proposed
-  rewrite unsound (a fixed multi-assign cannot express an open multret spread).
+- **L3 (CMPPROTO), L5 (NATIVECALL)** — NOW FIXED (see table). Both are runtime-only
+  JIT pseudo-ops never present in serialized v9 bytecode, so the fixes are correct
+  hardening with the 275-file corpus BYTE-IDENTICAL: L5 decodes ordinal 62 as the
+  ABC-form call it is (was AD, scrambling A/B/C) and lifts it as a FASTCALL-style
+  no-op; L3 emits a genuine two-way conditional preserving the `d` edge when D≠0
+  (D==0 keeps the exact fall-through). **set_list multret tail** (#21) is "plausible,
+  NO trigger constructed" — not a confirmed finding; the common multret-tail-in-
+  constructor case was tested and decompiles correctly (`{1,2,multi()}` → 5 values).

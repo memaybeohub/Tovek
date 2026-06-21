@@ -1,8 +1,9 @@
 # Decompiler correctness audit — confirmed findings
 
 > ## FIX STATUS (branch `fix/decompiler-correctness`)
-> **Shipped & validated (17):** C1, C2, C2b, C3, **C4**, C5, **C6**, C7, C8, C9,
-> C10, C11, C12, L1, L2, L4, L6. Each: per-bug differential repro PASS, unit tests
+> **Shipped & validated (19): EVERY documented finding's fix** — C1, C2, C2b, C3,
+> C4, C5, C6, C7, C8, C9, C10, C11, C12, **L1, L2, L3, L4, L5, L6** (L3/L5 fixed as
+> correct, byte-identical hardening for runtime-only ops). Each: per-bug differential repro PASS, unit tests
 > green, 275/275 corpus files parse, full 863-program harness with no new regression
 > family (final count **5 mismatches, 0 decompile failures**, down from 63). C4 was
 > fixed via a self-phi removal SCOPED to upvalue-cell loop phis; C6 via a new
