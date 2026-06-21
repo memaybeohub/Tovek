@@ -246,6 +246,10 @@ pub fn try_decompile_bytecode_with_script_name(
             // (whose decisions a write-count change here must not perturb). BEFORE
             // `recover_guard_continue` (which must stay last).
             ast::eliminate_nil::eliminate_redundant_nil(&mut body);
+            // C13: re-target a dropped connection write `local _ = sig:Connect(
+            // function() ... cell:Disconnect() ... end)` back to the captured `cell`
+            // the SSA orphaned (the parent never models the closure's by-ref write).
+            ast::recover_dropped_connection::recover_dropped_connection(&mut body);
             // Expression-level de-inline (proposal §7): recover small pure scalar
             // helpers that `-O2` inlined as a sub-expression of a caller's
             // condition/RValue. MUST run after reconstruct_conditional_expressions

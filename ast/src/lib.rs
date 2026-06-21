@@ -45,6 +45,7 @@ pub mod inline_temps;
 pub mod replace_locals;
 pub mod normalize_conditions;
 pub mod rebuild_table_literals;
+pub mod recover_dropped_connection;
 pub mod recover_guard_continue;
 pub mod recover_methods;
 mod r#return;
