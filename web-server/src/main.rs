@@ -138,9 +138,9 @@ async fn main() -> Result<(), io::Error> {
         .with_state(state);
 
     // Run the web server
-    let listener = TcpListener::bind(BIND_ADDR).await?;
+    let bind_addr = get_bind_addr();
+    let listener = TcpListener::bind(&bind_addr).await?;
     info!("🚀 Listening on {}", listener.local_addr()?);
-    axum::serve(listener, app).await
 }
 
 /// `POST /decompile` — one script, base64-encoded body. UNCHANGED legacy path.
