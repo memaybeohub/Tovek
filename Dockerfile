@@ -1,9 +1,14 @@
-FROM python:3.12-slim AS builder
+# === Builder stage ===
+FROM rust:1.85-slim AS builder
 
-# Cài Rust + build web-server
-RUN apt-get update && apt-get install -y curl build-essential pkg-config libssl-dev
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
+# Cài thêm dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Cài nightly toolchain đúng phiên bản
+RUN rustup toolchain install nightly-2024-12-15 --component rust-src
+RUN rustup default nightly-2024-12-15
 
 WORKDIR /app
 COPY . .
@@ -11,7 +16,7 @@ COPY . .
 # Build release web-server
 RUN cargo build --release -p web-server
 
-# Final stage (nhẹ)
+# === Final stage (nhẹ) ===
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -22,10 +27,9 @@ COPY --from=builder /app/target/release/web-server /usr/local/bin/web-server
 # Copy Python wrapper
 COPY wrapper.py .
 
-# Cài thêm nếu Python cần gì (ví dụ requests, flask...)
-RUN pip install --no-cache-dir fastapi uvicorn  # hoặc cái gì bạn cần
+# Cài Python packages nếu cần
+RUN pip install --no-cache-dir fastapi uvicorn
 
 EXPOSE 3000
 
-# Chạy Python wrapper
 CMD ["python", "wrapper.py"]
