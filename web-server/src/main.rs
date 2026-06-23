@@ -37,7 +37,7 @@ use tracing::info;
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-const BIND_ADDR: &str = "127.0.0.1:3000";
+use std::env;  fn get_bind_addr() -> String {     let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());     format!("0.0.0.0:{}", port) }
 
 /// Default decode key (`op = op * key % 256`). 203 is Roblox client bytecode —
 /// the only thing the executor → server workflow produces. Overridable per
