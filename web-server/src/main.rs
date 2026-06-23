@@ -13,7 +13,6 @@
 use std::io;
 use std::sync::Arc;
 use std::env;   // ← Thêm dòng này vào đầu file (cùng với các use khác)
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use axum::{
     body::{Body, Bytes},
@@ -98,9 +97,8 @@ impl IntoResponse for Error {
 /// Shared server state.
 #[derive(Clone)]
 struct AppState {
+    /// Bounds concurrent batch decompiles (see [`MAX_CONCURRENT_BATCHES`]).
     batch_semaphore: Arc<Semaphore>,
-    decompile_count: Arc<AtomicUsize>,     // ← Thêm dòng này
-    success_count: Arc<AtomicUsize>,       // ← Thêm dòng này (tùy chọn)
 }
 
 #[tokio::main]
@@ -121,13 +119,10 @@ async fn main() -> Result<(), io::Error> {
 
     let state = AppState {
         batch_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_BATCHES)),
-        decompile_count: Arc::new(AtomicUsize::new(0)),
-        success_count: Arc::new(AtomicUsize::new(0)),
     };
 
     // Build our application with the routes...
     let app = Router::new()
-        .route("/", get(home_page))                    // ← Thêm dòng này
         .route("/decompile", post(decompile))
         .route(
             "/decompile/raw",
@@ -149,18 +144,15 @@ async fn main() -> Result<(), io::Error> {
     axum::serve(listener, app).await        // ← Không dấu ;
 }
 /// `POST /decompile` — one script, base64-encoded body. UNCHANGED legacy path.
-async fn decompile(headers: HeaderMap, body: Bytes, State(state): State<AppState>) -> Result<String, Error> {
-    state.decompile_count.fetch_add(1, Ordering::Relaxed);
-    
+async fn decompile(headers: HeaderMap, body: Bytes) -> Result<String, Error> {
     let mut bytecode = Vec::new();
     BASE64_STANDARD.decode_vec(body, &mut bytecode)?;
-    
-    let script_name = headers.get("x-script-name").and_then(|v| v.to_str().ok());
+    let script_name = headers
+        .get("x-script-name")
+        .and_then(|value| value.to_str().ok());
     let options = parse_options_headers(&headers)?;
-    
-    let decompiled = luau_lifter::decompile_bytecode_with_options(&bytecode, 203, script_name, options);
-    
-    state.success_count.fetch_add(1, Ordering::Relaxed);   // Nếu thành công
+    let decompiled =
+        luau_lifter::decompile_bytecode_with_options(&bytecode, 203, script_name, options);
     info!("Successfully decompiled bytecode.");
     Ok(decompiled)
 }
@@ -684,55 +676,5 @@ fn parse_key_header(headers: &HeaderMap) -> Result<u8, Error> {
             .ok()
             .and_then(|s| s.trim().parse::<u8>().ok())
             .ok_or_else(|| Error::BadRequest("x-encode-key must be an integer 0..=255".into())),
-use axum::routing::get;   // ← Thêm vào phần use axum nếu chưa có
-
-/// GET / — Homepage với thống kê
-async fn home_page(State(state): State<AppState>) -> String {
-    let total = state.decompile_count.load(Ordering::Relaxed);
-    let success = state.success_count.load(Ordering::Relaxed);
-
-    let html = format!(
-r#"<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tovek Decompiler Server</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 40px; background: #0f0f0f; color: #0f0; text-align: center; }}
-        h1 {{ color: #00ff00; }}
-        .stats {{ font-size: 1.5em; margin: 30px 0; }}
-        .card {{ background: #1a1a1a; padding: 20px; border-radius: 10px; display: inline-block; margin: 10px; min-width: 280px; }}
-    </style>
-</head>
-<body>
-    <h1>🚀 Tovek Decompiler Server</h1>
-    <p>High-readability Luau decompiler - Running on Render</p>
-    
-    <div class="stats">
-        <div class="card">
-            <h2>Tổng requests</h2>
-            <h1>{}</h1>
-        </div>
-        <div class="card">
-            <h2>Thành công</h2>
-            <h1>{}</h1>
-        </div>
-    </div>
-
-    <p><strong>Endpoints:</strong></p>
-    <p><code>POST /decompile</code> — Decompile single script (base64)</p>
-    <p><code>POST /decompile/raw</code> — Raw bytecode</p>
-    <p><code>POST /decompile/batch</code> — Batch decompile</p>
-
-    <hr>
-    <small>Powered by Tovek beta • Made with ❤️ for Roblox devs</small>
-</body>
-</html>"#,
-        total, success
-    );
-
-    html
-}
     }
 }
