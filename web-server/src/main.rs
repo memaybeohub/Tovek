@@ -12,6 +12,7 @@
 //! malformed request framing is an HTTP 4xx.
 use std::io;
 use std::sync::Arc;
+use std::env;   // ← Thêm dòng này vào đầu file (cùng với các use khác)
 
 use axum::{
     body::{Body, Bytes},
@@ -37,8 +38,7 @@ use tracing::info;
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-use std::env;  fn get_bind_addr() -> String {     let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());     format!("0.0.0.0:{}", port) }
-
+const BIND_ADDR: &str = "127.0.0.1:3000";   // Giữ nguyên hoặc comment lại
 /// Default decode key (`op = op * key % 256`). 203 is Roblox client bytecode —
 /// the only thing the executor → server workflow produces. Overridable per
 /// request via the `x-encode-key` header (single routes) / the JSON `key` field /
@@ -103,9 +103,7 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<(), io::Error> {
-    // One process-global quiet panic hook, installed before any decompile work, so
-    // the per-function/per-item `catch_unwind`s used by the batch path don't spam
-    // stderr and don't race a per-call set_hook across threads.
+    // One process-global quiet panic hook...
     luau_lifter::install_quiet_panic_hook();
 
     // Setup the logger
@@ -123,8 +121,7 @@ async fn main() -> Result<(), io::Error> {
         batch_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_BATCHES)),
     };
 
-    // Build our application with the routes. Per-route `DefaultBodyLimit` layers
-    // raise the 2 MiB default ONLY for the new routes; `/decompile` is untouched.
+    // Build our application with the routes...
     let app = Router::new()
         .route("/decompile", post(decompile))
         .route(
@@ -137,12 +134,15 @@ async fn main() -> Result<(), io::Error> {
         )
         .with_state(state);
 
-    // Run the web server
-    let bind_addr = get_bind_addr();
+    // === BIND TO 0.0.0.0 + PORT FROM RENDER ===
+    let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
+    let bind_addr = format!("0.0.0.0:{}", port);
+
     let listener = TcpListener::bind(&bind_addr).await?;
     info!("🚀 Listening on {}", listener.local_addr()?);
-}
 
+    axum::serve(listener, app).await        // ← Không dấu ;
+}
 /// `POST /decompile` — one script, base64-encoded body. UNCHANGED legacy path.
 async fn decompile(headers: HeaderMap, body: Bytes) -> Result<String, Error> {
     let mut bytecode = Vec::new();
